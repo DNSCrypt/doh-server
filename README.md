@@ -1,2 +1,3 @@
 # rust-doh
-A toy DNS-over-HTTP server proxy
+
+A toy DNS-over-HTTP server proxy.

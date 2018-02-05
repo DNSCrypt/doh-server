@@ -1,0 +1,12 @@
+[package]
+name = "rust-doh"
+version = "0.1.0"
+authors = ["Frank Denis <github@pureftpd.org>"]
+
+[dependencies]
+hyper = "*"
+futures-await = "*"
+tokio-core = "*"
+tokio-io = "*"
+tokio-timer = "*"
+clippy = {version = ">=0", optional = true}
