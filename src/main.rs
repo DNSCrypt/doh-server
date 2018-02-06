@@ -27,6 +27,7 @@ use tokio_core::net::UdpSocket;
 use tokio_core::reactor::Core;
 use tokio_core::reactor::Handle;
 
+const DNS_QUERY_PARAM: &str = "dns";
 const LISTEN_ADDRESS: &str = "127.0.0.1:3000";
 const LOCAL_BIND_ADDRESS: &str = "0.0.0.0:0";
 const MAX_CLIENTS: u32 = 512;
@@ -74,21 +75,15 @@ impl Service for DoH {
                 for parts in query.split('&') {
                     let mut kv = parts.split('=');
                     if let Some(k) = kv.next() {
-                        if k != "dns" {
-                            continue;
+                        if k == DNS_QUERY_PARAM {
+                            question_str = kv.next();
                         }
-                        question_str = kv.next();
                     }
                 }
-                let question_str = match question_str {
-                    None => {
-                        response.set_status(StatusCode::BadRequest);
-                        return Box::new(future::ok(response));
-                    }
-                    Some(question_str) => question_str,
-                };
-                let question = match base64::decode_config(question_str, base64::URL_SAFE_NO_PAD) {
-                    Ok(question) => question,
+                let question = match question_str.and_then(|question_str| {
+                    base64::decode_config(question_str, base64::URL_SAFE_NO_PAD).ok()
+                }) {
+                    Some(question) => question,
                     _ => {
                         response.set_status(StatusCode::BadRequest);
                         return Box::new(future::ok(response));
