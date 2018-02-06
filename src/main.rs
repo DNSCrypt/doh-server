@@ -112,14 +112,14 @@ fn main() {
     let timers = tokio_timer::wheel().build();
     let client_count = Rc::new(RefCell::new(0u32));
     let fut = server.for_each(move |client_fut| {
-        let client_count_inner = client_count.clone();
         {
-            let count = client_count_inner.borrow_mut();
+            let count = client_count.borrow_mut();
             if *count > MAX_CLIENTS {
                 return Ok(());
             }
             (*count).saturating_add(1);
         }
+        let client_count_inner = client_count.clone();
         let timers_inner = timers.clone();
         let fut = client_fut
             .map(move |_| {
