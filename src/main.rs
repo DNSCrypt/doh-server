@@ -198,7 +198,7 @@ fn parse_opts(doh: &mut DoH) {
         .arg(
             Arg::with_name("listen_address")
                 .short("l")
-                .long("listen_address")
+                .long("listen-address")
                 .takes_value(true)
                 .default_value(LISTEN_ADDRESS)
                 .help("Address to listen to"),
@@ -206,7 +206,7 @@ fn parse_opts(doh: &mut DoH) {
         .arg(
             Arg::with_name("server_address")
                 .short("u")
-                .long("server_address")
+                .long("server-address")
                 .takes_value(true)
                 .default_value(SERVER_ADDRESS)
                 .help("Address to connect to"),
@@ -214,7 +214,7 @@ fn parse_opts(doh: &mut DoH) {
         .arg(
             Arg::with_name("local_bind_address")
                 .short("b")
-                .long("local_bind_address")
+                .long("local-bind-address")
                 .takes_value(true)
                 .default_value(LOCAL_BIND_ADDRESS)
                 .help("Address to connect from"),
@@ -230,7 +230,7 @@ fn parse_opts(doh: &mut DoH) {
         .arg(
             Arg::with_name("max_clients")
                 .short("c")
-                .long("max_clients")
+                .long("max-clients")
                 .takes_value(true)
                 .default_value(&max_clients)
                 .help("Maximum number of simultaneous clients"),
