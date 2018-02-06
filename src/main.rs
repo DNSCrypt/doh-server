@@ -10,11 +10,13 @@ extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_timer;
 
+mod dns;
+
 use clap::{App, Arg};
 use futures::future;
 use futures::prelude::*;
 use hyper::{Body, Method, StatusCode};
-use hyper::header::{ContentLength, ContentType};
+use hyper::header::{CacheControl, CacheDirective, ContentLength, ContentType};
 use hyper::server::{Http, Request, Response, Service};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -32,6 +34,9 @@ const MAX_DNS_RESPONSE_LEN: usize = 4096;
 const MIN_DNS_PACKET_LEN: usize = 17;
 const SERVER_ADDRESS: &str = "9.9.9.9:53";
 const TIMEOUT_SEC: u64 = 10;
+const MAX_TTL: u32 = 86400 * 7;
+const MIN_TTL: u32 = 1;
+const ERR_TTL: u32 = 1;
 
 #[derive(Clone, Debug)]
 struct DoH {
@@ -53,15 +58,17 @@ impl Service for DoH {
         let mut response = Response::new();
         match (req.method(), req.path()) {
             (&Method::Post, "/dns-query") => {
-                let fut = self.body_read(req.body(), self.handle.clone()).map(|body| {
-                    let body_len = body.len();
-                    response.set_body(body);
-                    response
-                        .with_header(ContentLength(body_len as u64))
-                        .with_header(ContentType(
-                            "application/dns-udpwireformat".parse().unwrap(),
-                        ))
-                });
+                let fut = self.body_read(req.body(), self.handle.clone())
+                    .map(|(body, ttl)| {
+                        let body_len = body.len();
+                        response.set_body(body);
+                        response
+                            .with_header(ContentLength(body_len as u64))
+                            .with_header(ContentType(
+                                "application/dns-udpwireformat".parse().unwrap(),
+                            ))
+                            .with_header(CacheControl(vec![CacheDirective::MaxAge(ttl)]))
+                    });
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
             (&Method::Post, _) => {
@@ -77,7 +84,7 @@ impl Service for DoH {
 
 impl DoH {
     #[async]
-    fn body_read(&self, body: Body, handle: Handle) -> Result<Vec<u8>, ()> {
+    fn body_read(&self, body: Body, handle: Handle) -> Result<(Vec<u8>, u32), ()> {
         let query = await!(
             body.concat2()
                 .map_err(|_err| ())
@@ -97,7 +104,8 @@ impl DoH {
             return Err(());
         }
         packet.truncate(len);
-        Ok(packet)
+        let min_ttl = dns::min_ttl(&packet, MIN_TTL, MAX_TTL, ERR_TTL).map_err(|_| {})?;
+        Ok((packet, min_ttl))
     }
 }
 
