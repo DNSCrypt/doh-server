@@ -3,6 +3,7 @@
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 
+extern crate base64;
 extern crate clap;
 extern crate futures_await as futures;
 extern crate hyper;
@@ -71,6 +72,44 @@ impl Service for DoH {
                     });
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
+            (&Method::Get, "/dns-query") => {
+                let query = req.query().unwrap_or("");
+                let mut question_str = None;
+                for parts in query.split('&') {
+                    let mut kv = parts.split('=');
+                    if let Some(k) = kv.next() {
+                        if k != "dns" {
+                            continue;
+                        }
+                        question_str = kv.next();
+                    }
+                }
+                let question_str = match question_str {
+                    None => {
+                        response.set_status(StatusCode::BadRequest);
+                        return Box::new(future::ok(response));
+                    }
+                    Some(question_str) => question_str,
+                };
+                let question = match base64::decode_config(question_str, base64::URL_SAFE_NO_PAD) {
+                    Ok(question) => question,
+                    _ => {
+                        response.set_status(StatusCode::BadRequest);
+                        return Box::new(future::ok(response));
+                    }
+                };
+                let fut = Self::proxy(question, self.handle.clone()).map(|(body, ttl)| {
+                    let body_len = body.len();
+                    response.set_body(body);
+                    response
+                        .with_header(ContentLength(body_len as u64))
+                        .with_header(ContentType(
+                            "application/dns-udpwireformat".parse().unwrap(),
+                        ))
+                        .with_header(CacheControl(vec![CacheDirective::MaxAge(ttl)]))
+                });
+                return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
+            }
             (&Method::Post, _) => {
                 response.set_status(StatusCode::NotFound);
             }
@@ -84,15 +123,7 @@ impl Service for DoH {
 
 impl DoH {
     #[async]
-    fn body_read(&self, body: Body, handle: Handle) -> Result<(Vec<u8>, u32), ()> {
-        let query = await!(
-            body.concat2()
-                .map_err(|_err| ())
-                .map(|chunk| chunk.to_vec())
-        )?;
-        if query.len() < MIN_DNS_PACKET_LEN {
-            return Err(());
-        }
+    fn proxy(query: Vec<u8>, handle: Handle) -> Result<(Vec<u8>, u32), ()> {
         let local_addr = LOCAL_BIND_ADDRESS.parse().unwrap();
         let socket = UdpSocket::bind(&local_addr, &handle).unwrap();
         let remote_addr = SERVER_ADDRESS.parse().unwrap();
@@ -106,6 +137,19 @@ impl DoH {
         packet.truncate(len);
         let min_ttl = dns::min_ttl(&packet, MIN_TTL, MAX_TTL, ERR_TTL).map_err(|_| {})?;
         Ok((packet, min_ttl))
+    }
+
+    #[async]
+    fn body_read(&self, body: Body, handle: Handle) -> Result<(Vec<u8>, u32), ()> {
+        let query = await!(
+            body.concat2()
+                .map_err(|_err| ())
+                .map(|chunk| chunk.to_vec())
+        )?;
+        if query.len() < MIN_DNS_PACKET_LEN {
+            return Err(());
+        }
+        await!(Self::proxy(query, handle))
     }
 }
 
