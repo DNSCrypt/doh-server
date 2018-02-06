@@ -33,6 +33,7 @@ const MAX_CLIENTS: u32 = 512;
 const MAX_DNS_QUESTION_LEN: usize = 512;
 const MAX_DNS_RESPONSE_LEN: usize = 4096;
 const MIN_DNS_PACKET_LEN: usize = 17;
+const PATH: &str = "/dns-query";
 const SERVER_ADDRESS: &str = "9.9.9.9:53";
 const TIMEOUT_SEC: u64 = 10;
 const MAX_TTL: u32 = 86400 * 7;
@@ -45,6 +46,7 @@ struct DoH {
     listen_address: SocketAddr,
     local_bind_address: SocketAddr,
     server_address: SocketAddr,
+    path: String,
     max_clients: u32,
     timeout: Duration,
 }
@@ -58,18 +60,12 @@ impl Service for DoH {
     fn call(&self, req: Request) -> Self::Future {
         let mut response = Response::new();
         match (req.method(), req.path()) {
-            (&Method::Post, "/dns-query") => {
-                let fut = self.body_read(req.body(), self.handle.clone())
-                    .map(|(body, ttl)| {
-                        let body_len = body.len();
-                        response.set_body(body);
-                        response
-                            .with_header(ContentLength(body_len as u64))
-                            .with_header(ContentType(
-                                "application/dns-udpwireformat".parse().unwrap(),
-                            ))
-                            .with_header(CacheControl(vec![CacheDirective::MaxAge(ttl)]))
-                    });
+            (&Method::Post, path) => {
+                if path != self.path {
+                    response.set_status(StatusCode::NotFound);
+                    return Box::new(future::ok(response));
+                }
+                let fut = self.read_body_and_proxy(req.body(), self.handle.clone());
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
             (&Method::Get, "/dns-query") => {
@@ -98,20 +94,8 @@ impl Service for DoH {
                         return Box::new(future::ok(response));
                     }
                 };
-                let fut = Self::proxy(question, self.handle.clone()).map(|(body, ttl)| {
-                    let body_len = body.len();
-                    response.set_body(body);
-                    response
-                        .with_header(ContentLength(body_len as u64))
-                        .with_header(ContentType(
-                            "application/dns-udpwireformat".parse().unwrap(),
-                        ))
-                        .with_header(CacheControl(vec![CacheDirective::MaxAge(ttl)]))
-                });
+                let fut = Self::proxy(question, self.handle.clone());
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
-            }
-            (&Method::Post, _) => {
-                response.set_status(StatusCode::NotFound);
             }
             _ => {
                 response.set_status(StatusCode::NotAcceptable);
@@ -123,7 +107,7 @@ impl Service for DoH {
 
 impl DoH {
     #[async]
-    fn proxy(query: Vec<u8>, handle: Handle) -> Result<(Vec<u8>, u32), ()> {
+    fn proxy(query: Vec<u8>, handle: Handle) -> Result<Response, ()> {
         let local_addr = LOCAL_BIND_ADDRESS.parse().unwrap();
         let socket = UdpSocket::bind(&local_addr, &handle).unwrap();
         let remote_addr = SERVER_ADDRESS.parse().unwrap();
@@ -136,11 +120,21 @@ impl DoH {
         }
         packet.truncate(len);
         let min_ttl = dns::min_ttl(&packet, MIN_TTL, MAX_TTL, ERR_TTL).map_err(|_| {})?;
-        Ok((packet, min_ttl))
+        Ok((packet, min_ttl)).map(|(body, ttl)| {
+            let body_len = body.len();
+            let mut response = Response::new();
+            response.set_body(body);
+            response
+                .with_header(ContentLength(body_len as u64))
+                .with_header(ContentType(
+                    "application/dns-udpwireformat".parse().unwrap(),
+                ))
+                .with_header(CacheControl(vec![CacheDirective::MaxAge(ttl)]))
+        })
     }
 
     #[async]
-    fn body_read(&self, body: Body, handle: Handle) -> Result<(Vec<u8>, u32), ()> {
+    fn read_body_and_proxy(&self, body: Body, handle: Handle) -> Result<Response, ()> {
         let query = await!(
             body.concat2()
                 .map_err(|_err| ())
@@ -162,6 +156,7 @@ fn main() {
         listen_address: LISTEN_ADDRESS.parse().unwrap(),
         local_bind_address: LOCAL_BIND_ADDRESS.parse().unwrap(),
         server_address: SERVER_ADDRESS.parse().unwrap(),
+        path: PATH.to_string(),
         max_clients: MAX_CLIENTS,
         timeout: Duration::from_secs(TIMEOUT_SEC),
     };
@@ -228,6 +223,14 @@ fn parse_opts(doh: &mut DoH) {
                 .takes_value(true)
                 .default_value(LOCAL_BIND_ADDRESS)
                 .help("Address to connect from"),
+        )
+        .arg(
+            Arg::with_name("path")
+                .short("p")
+                .long("path")
+                .takes_value(true)
+                .default_value(PATH)
+                .help("URI path"),
         )
         .arg(
             Arg::with_name("max_clients")
