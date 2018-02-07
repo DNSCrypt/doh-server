@@ -32,7 +32,7 @@ OPTIONS:
     -t, --timeout <timeout>                          Timeout, in seconds [default: 10]
 ```
 
-Serves HTTP requests only. DoH is mostly useful to leverage an existing webserver, so just configure your webserver to proxy connections to this.
+Serves HTTP requests only. DoH is mostly useful to leverage an existing webserver, so just configure your webserver or CDN to proxy connections to this.
 
 ## Clients
 
