@@ -33,3 +33,10 @@ OPTIONS:
 ```
 
 Serves HTTP requests only. DoH is mostly useful to leverage an existing webserver, so just configure your webserver to proxy connections to this.
+
+## Clients
+
+`doh-proxy` can be used with [dnscrypt-proxy](https://github.com/jedisct1/dnscrypt-proxy)
+as a client.
+
+`doh-proxy` is currently being used by the `doh.crypto.sx` public DNS resolver.
