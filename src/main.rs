@@ -7,7 +7,7 @@ extern crate base64;
 extern crate clap;
 extern crate futures_await as futures;
 extern crate hyper;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_io;
 extern crate tokio_timer;
 
@@ -20,12 +20,12 @@ use hyper::{Body, Method, StatusCode};
 use hyper::header::{CacheControl, CacheDirective, ContentLength, ContentType};
 use hyper::server::{Http, Request, Response, Service};
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio_core::net::UdpSocket;
-use tokio_core::reactor::Core;
-use tokio_core::reactor::Handle;
+use std::rc::Rc;
+use tokio::executor::current_thread;
+use tokio::net::{TcpListener, UdpSocket};
+use tokio_timer::Timer;
 
 const DNS_QUERY_PARAM: &str = "dns";
 const LISTEN_ADDRESS: &str = "127.0.0.1:3000";
@@ -43,13 +43,14 @@ const ERR_TTL: u32 = 1;
 
 #[derive(Clone, Debug)]
 struct DoH {
-    handle: Handle,
     listen_address: SocketAddr,
     local_bind_address: SocketAddr,
     server_address: SocketAddr,
     path: String,
     max_clients: u32,
     timeout: Duration,
+    timers: Timer,
+    clients_count: Rc<RefCell<u32>>,
 }
 
 impl Service for DoH {
@@ -59,6 +60,34 @@ impl Service for DoH {
     type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, req: Request) -> Self::Future {
+        {
+            let count = self.clients_count.borrow_mut();
+            if *count > self.max_clients {
+                let mut response = Response::new();
+                response.set_status(StatusCode::TooManyRequests);
+                return Box::new(future::ok(response));
+            }
+            (*count).saturating_add(1);
+        }
+        let clients_count_inner = self.clients_count.clone();
+        let fut = self.handle_client(req)
+            .then(move |fut| {
+                (*clients_count_inner).borrow_mut().saturating_sub(1);
+                fut
+            })
+            .map_err(|err| {
+                eprintln!("server error: {:?}", err);
+                err
+            });
+        let timed = self.timers
+            .timeout(fut.map_err(|_| {}), self.timeout)
+            .map_err(|_| hyper::Error::Timeout);
+        Box::new(timed)
+    }
+}
+
+impl DoH {
+    fn handle_client(&self, req: Request) -> Box<Future<Item = Response, Error = hyper::Error>> {
         let mut response = Response::new();
         match (req.method(), req.path()) {
             (&Method::Post, path) => {
@@ -66,7 +95,7 @@ impl Service for DoH {
                     response.set_status(StatusCode::NotFound);
                     return Box::new(future::ok(response));
                 }
-                let fut = self.read_body_and_proxy(req.body(), self.handle.clone());
+                let fut = self.read_body_and_proxy(req.body());
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
             (&Method::Get, "/dns-query") => {
@@ -89,7 +118,7 @@ impl Service for DoH {
                         return Box::new(future::ok(response));
                     }
                 };
-                let fut = Self::proxy(question, self.handle.clone());
+                let fut = Self::proxy(question);
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
             _ => {
@@ -98,15 +127,13 @@ impl Service for DoH {
         };
         Box::new(future::ok(response))
     }
-}
 
-impl DoH {
     #[async]
-    fn proxy(query: Vec<u8>, handle: Handle) -> Result<Response, ()> {
+    fn proxy(query: Vec<u8>) -> Result<Response, ()> {
         let local_addr = LOCAL_BIND_ADDRESS.parse().unwrap();
-        let socket = UdpSocket::bind(&local_addr, &handle).unwrap();
+        let socket = UdpSocket::bind(&local_addr).unwrap();
         let remote_addr = SERVER_ADDRESS.parse().unwrap();
-        let (socket, _) = await!(socket.send_dgram(query, remote_addr)).map_err(|_| ())?;
+        let (socket, _) = await!(socket.send_dgram(query, &remote_addr)).map_err(|_| ())?;
         let mut packet = vec![0; MAX_DNS_RESPONSE_LEN];
         let (_socket, mut packet, len, server_addr) =
             await!(socket.recv_dgram(packet)).map_err(|_| ())?;
@@ -129,7 +156,7 @@ impl DoH {
     }
 
     #[async]
-    fn read_body_and_proxy(&self, body: Body, handle: Handle) -> Result<Response, ()> {
+    fn read_body_and_proxy(&self, body: Body) -> Result<Response, ()> {
         let query = await!(
             body.concat2()
                 .map_err(|_err| ())
@@ -138,56 +165,34 @@ impl DoH {
         if query.len() < MIN_DNS_PACKET_LEN {
             return Err(());
         }
-        await!(Self::proxy(query, handle))
+        await!(Self::proxy(query))
     }
 }
 
 fn main() {
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-    let handle_inner = handle.clone();
     let mut doh = DoH {
-        handle: handle_inner.clone(),
         listen_address: LISTEN_ADDRESS.parse().unwrap(),
         local_bind_address: LOCAL_BIND_ADDRESS.parse().unwrap(),
         server_address: SERVER_ADDRESS.parse().unwrap(),
         path: PATH.to_string(),
         max_clients: MAX_CLIENTS,
         timeout: Duration::from_secs(TIMEOUT_SEC),
+        clients_count: Rc::new(RefCell::new(0u32)),
+        timers: tokio_timer::wheel().build(),
     };
     parse_opts(&mut doh);
     let listen_address = doh.listen_address;
-    let doh_inner = doh.clone();
+    let listener = TcpListener::bind(&listen_address).unwrap();
+    println!("Listening on http://{}", listen_address);
     let server = Http::new()
         .keep_alive(false)
         .max_buf_size(MAX_DNS_QUESTION_LEN)
-        .serve_addr_handle(&listen_address, &handle, move || Ok(doh_inner.clone()))
-        .unwrap();
-    println!("Listening on http://{}", server.incoming_ref().local_addr());
-    let handle_inner = handle.clone();
-    let timers = tokio_timer::wheel().build();
-    let client_count = Rc::new(RefCell::new(0u32));
+        .serve_incoming(listener.incoming(), move || Ok(doh.clone()));
     let fut = server.for_each(move |client_fut| {
-        {
-            let count = client_count.borrow_mut();
-            if *count > doh.max_clients {
-                return Ok(());
-            }
-            (*count).saturating_add(1);
-        }
-        let client_count_inner = client_count.clone();
-        let timers_inner = timers.clone();
-        let fut = client_fut
-            .map(move |_| {
-                (*client_count_inner.borrow_mut()).saturating_sub(1);
-            })
-            .map_err(|err| eprintln!("server error: {:?}", err));
-        let timed = timers_inner.timeout(fut, doh.timeout);
-        handle_inner.spawn(timed);
+        current_thread::spawn(client_fut.map(|_| {}).map_err(|_| {}));
         Ok(())
     });
-    handle.spawn(fut.map_err(|_| ()));
-    core.run(futures::future::empty::<(), ()>()).unwrap();
+    current_thread::run(|_| fut).wait().unwrap();
 }
 
 fn parse_opts(doh: &mut DoH) {
