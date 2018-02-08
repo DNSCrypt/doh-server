@@ -21,7 +21,6 @@ use hyper::header::{CacheControl, CacheDirective, ContentLength, ContentType};
 use hyper::server::{Http, Request, Response, Service};
 use std::cell::RefCell;
 use std::net::SocketAddr;
-use std::ops::Deref;
 use std::time::Duration;
 use std::rc::Rc;
 use tokio::executor::current_thread;
@@ -160,13 +159,12 @@ impl DoH {
     fn read_body_and_proxy(&self, body: Body) -> Result<Response, ()> {
         let query = await!({
             let mut sum_size = 0;
-            body.and_then(move |c| {
-                let len = c.deref().len();
-                sum_size += len;
+            body.and_then(move |chunk| {
+                sum_size += chunk.len();
                 if sum_size > MAX_DNS_QUESTION_LEN {
                     Err(hyper::error::Error::TooLarge)
                 } else {
-                    Ok(c)
+                    Ok(chunk)
                 }
             }).concat2()
                 .map_err(|_err| ())
