@@ -189,7 +189,7 @@ fn main() {
         .max_buf_size(MAX_DNS_QUESTION_LEN)
         .serve_incoming(listener.incoming(), move || Ok(doh.clone()));
     let fut = server.for_each(move |client_fut| {
-        current_thread::spawn(client_fut.map(|_| {}).map_err(|_| {}));
+        current_thread::spawn(client_fut.map(|_| {}).map_err(|_| {})); // "cannot call execute unless the thread is already in the context of a call to run" :(
         Ok(())
     });
     current_thread::run(|_| fut).wait().unwrap();
