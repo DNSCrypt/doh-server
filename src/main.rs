@@ -21,6 +21,7 @@ use hyper::header::{CacheControl, CacheDirective, ContentLength, ContentType};
 use hyper::server::{Http, Request, Response, Service};
 use std::cell::RefCell;
 use std::net::SocketAddr;
+use std::ops::Deref;
 use std::time::Duration;
 use std::rc::Rc;
 use tokio::executor::current_thread;
@@ -157,11 +158,20 @@ impl DoH {
 
     #[async]
     fn read_body_and_proxy(&self, body: Body) -> Result<Response, ()> {
-        let query = await!(
-            body.concat2()
+        let query = await!({
+            let mut sum_size = 0;
+            body.and_then(move |c| {
+                let len = c.deref().len();
+                sum_size += len;
+                if sum_size > MAX_DNS_QUESTION_LEN {
+                    Err(hyper::error::Error::TooLarge)
+                } else {
+                    Ok(c)
+                }
+            }).concat2()
                 .map_err(|_err| ())
                 .map(|chunk| chunk.to_vec())
-        )?;
+        })?;
         if query.len() < MIN_DNS_PACKET_LEN {
             return Err(());
         }
@@ -186,13 +196,14 @@ fn main() {
     println!("Listening on http://{}", listen_address);
     let server = Http::new()
         .keep_alive(false)
-        .max_buf_size(MAX_DNS_QUESTION_LEN)
         .serve_incoming(listener.incoming(), move || Ok(doh.clone()));
     let fut = server.for_each(move |client_fut| {
-        current_thread::spawn(client_fut.map(|_| {}).map_err(|_| {})); // "cannot call execute unless the thread is already in the context of a call to run" :(
+        current_thread::spawn(client_fut.map(|_| {}).map_err(|_| {}));
         Ok(())
     });
-    current_thread::run(|_| fut).wait().unwrap();
+    current_thread::run(|_| {
+        current_thread::spawn(fut.map_err(|_| {}));
+    })
 }
 
 fn parse_opts(doh: &mut DoH) {
