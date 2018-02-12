@@ -4,8 +4,6 @@ A DNS-over-HTTP server proxy in Rust. Add a webserver and you get DNS-over-HTTPS
 
 ## Installation
 
-Requires rust-nightly.
-
 ```sh
 cargo install doh-proxy
 ```
