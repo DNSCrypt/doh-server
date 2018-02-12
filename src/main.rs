@@ -1,5 +1,3 @@
-#![feature(proc_macro, conservative_impl_trait, generators, conservative_impl_trait,
-           universal_impl_trait, nll)]
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 
@@ -89,16 +87,16 @@ impl Service for DoH {
 impl DoH {
     fn handle_client(&self, req: Request) -> Box<Future<Item = Response, Error = hyper::Error>> {
         let mut response = Response::new();
-        match (req.method(), req.path()) {
-            (&Method::Post, path) => {
-                if path != self.path {
-                    response.set_status(StatusCode::NotFound);
-                    return Box::new(future::ok(response));
-                }
+        if req.path() != self.path {
+            response.set_status(StatusCode::NotFound);
+            return Box::new(future::ok(response));
+        }
+        match *req.method() {
+            Method::Post => {
                 let fut = self.read_body_and_proxy(req.body());
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
-            (&Method::Get, "/dns-query") => {
+            Method::Get => {
                 let query = req.query().unwrap_or("");
                 let mut question_str = None;
                 for parts in query.split('&') {
@@ -122,13 +120,13 @@ impl DoH {
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
             _ => {
-                response.set_status(StatusCode::NotAcceptable);
+                response.set_status(StatusCode::MethodNotAllowed);
             }
         };
         Box::new(future::ok(response))
     }
 
-    fn proxy(query: Vec<u8>) -> impl Future<Item = Response, Error = ()> {
+    fn proxy(query: Vec<u8>) -> Box<Future<Item = Response, Error = ()>> {
         let local_addr = LOCAL_BIND_ADDRESS.parse().unwrap();
         let socket = UdpSocket::bind(&local_addr).unwrap();
         let remote_addr: SocketAddr = SERVER_ADDRESS.parse().unwrap();
@@ -159,10 +157,10 @@ impl DoH {
                     .with_header(CacheControl(vec![CacheDirective::MaxAge(ttl)]));
                 future::ok(response)
             });
-        fut
+        Box::new(fut)
     }
 
-    fn read_body_and_proxy(&self, body: Body) -> impl Future<Item = Response, Error = ()> {
+    fn read_body_and_proxy(&self, body: Body) -> Box<Future<Item = Response, Error = ()>> {
         let mut sum_size = 0;
         let fut = body.and_then(move |chunk| {
             sum_size += chunk.len();
@@ -180,7 +178,7 @@ impl DoH {
                 }
                 Box::new(Self::proxy(query))
             });
-        fut
+        Box::new(fut)
     }
 }
 
