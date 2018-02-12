@@ -1,3 +1,5 @@
+[![dependency status](https://deps.rs/repo/github/jedisct1/rust-doh/status.svg)](https://deps.rs/repo/github/jedisct1/rust-doh)
+
 # doh-proxy
 
 A DNS-over-HTTP server proxy in Rust. Add a webserver and you get DNS-over-HTTPS, which is actually DNS-over-HTTP/2.
