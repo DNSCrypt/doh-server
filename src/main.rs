@@ -204,9 +204,7 @@ fn main() {
         current_thread::spawn(client_fut.map(|_| {}).map_err(|_| {}));
         Ok(())
     });
-    current_thread::run(|_| {
-        current_thread::spawn(fut.map_err(|_| {}));
-    })
+    current_thread::block_on_all(fut).unwrap();
 }
 
 fn parse_opts(doh: &mut DoH) {
