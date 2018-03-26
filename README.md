@@ -40,3 +40,5 @@ Serves HTTP requests only. DoH is mostly useful to leverage an existing webserve
 as a client.
 
 `doh-proxy` is currently being used by the `doh.crypto.sx` public DNS resolver.
+
+Other public DoH servers can be found here: [public encrypted DNS servers](https://dnscrypt.info/public-servers).
