@@ -116,7 +116,7 @@ impl DoH {
                         return Box::new(future::ok(response));
                     }
                 };
-                let fut = Self::proxy(question);
+                let fut = Self::proxy(question, self.local_bind_address, self.server_address);
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
             _ => {
@@ -126,10 +126,8 @@ impl DoH {
         Box::new(future::ok(response))
     }
 
-    fn proxy(query: Vec<u8>) -> Box<Future<Item = Response, Error = ()>> {
-        let local_addr = LOCAL_BIND_ADDRESS.parse().unwrap();
+    fn proxy(query: Vec<u8>, local_addr: SocketAddr, remote_addr: SocketAddr) -> Box<Future<Item = Response, Error = ()>> {
         let socket = UdpSocket::bind(&local_addr).unwrap();
-        let remote_addr: SocketAddr = SERVER_ADDRESS.parse().unwrap();
         let fut = socket
             .send_dgram(query, &remote_addr)
             .map_err(|_| ())
@@ -162,6 +160,8 @@ impl DoH {
 
     fn read_body_and_proxy(&self, body: Body) -> Box<Future<Item = Response, Error = ()>> {
         let mut sum_size = 0;
+        let local_addr = self.local_bind_address.clone();
+        let server_addr = self.server_address.clone();
         let fut = body.and_then(move |chunk| {
             sum_size += chunk.len();
             if sum_size > MAX_DNS_QUESTION_LEN {
@@ -176,7 +176,7 @@ impl DoH {
                 if query.len() < MIN_DNS_PACKET_LEN {
                     return Box::new(future::err(())) as Box<Future<Item = _, Error = _>>;
                 }
-                Box::new(Self::proxy(query))
+                Box::new(Self::proxy(query, local_addr, server_addr))
             });
         Box::new(fut)
     }
