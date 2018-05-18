@@ -101,8 +101,10 @@ pub fn min_ttl(
         }
         let qtype = u16::from(packet[offset]) << 8 | u16::from(packet[offset + 1]);
         let qclass = u16::from(packet[offset + 2]) << 8 | u16::from(packet[offset + 3]);
-        let ttl = u32::from(packet[offset + 4]) << 24 | u32::from(packet[offset + 5]) << 16
-            | u32::from(packet[offset + 6]) << 8 | u32::from(packet[offset + 7]);
+        let ttl = u32::from(packet[offset + 4]) << 24
+            | u32::from(packet[offset + 5]) << 16
+            | u32::from(packet[offset + 6]) << 8
+            | u32::from(packet[offset + 7]);
         let rdlen = (u16::from(packet[offset + 8]) << 8 | u16::from(packet[offset + 9])) as usize;
         offset += 10;
         if !(qtype == DNS_TYPE_OPT && qclass == DNS_CLASS_IN) {

@@ -14,13 +14,13 @@ mod dns;
 use clap::{App, Arg};
 use futures::future;
 use futures::prelude::*;
-use hyper::{Body, Method, StatusCode};
 use hyper::header::{CacheControl, CacheDirective, ContentLength, ContentType};
 use hyper::server::{Http, Request, Response, Service};
+use hyper::{Body, Method, StatusCode};
 use std::cell::RefCell;
 use std::net::SocketAddr;
-use std::time::Duration;
 use std::rc::Rc;
+use std::time::Duration;
 use tokio::executor::current_thread;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio_timer::Timer;
@@ -68,7 +68,8 @@ impl Service for DoH {
             (*count).saturating_add(1);
         }
         let clients_count_inner = self.clients_count.clone();
-        let fut = self.handle_client(req)
+        let fut = self
+            .handle_client(req)
             .then(move |fut| {
                 (*clients_count_inner).borrow_mut().saturating_sub(1);
                 fut
@@ -77,7 +78,8 @@ impl Service for DoH {
                 eprintln!("server error: {:?}", err);
                 err
             });
-        let timed = self.timers
+        let timed = self
+            .timers
             .timeout(fut.map_err(|_| {}), self.timeout)
             .map_err(|_| hyper::Error::Timeout);
         Box::new(timed)
@@ -126,7 +128,11 @@ impl DoH {
         Box::new(future::ok(response))
     }
 
-    fn proxy(query: Vec<u8>, local_addr: SocketAddr, remote_addr: SocketAddr) -> Box<Future<Item = Response, Error = ()>> {
+    fn proxy(
+        query: Vec<u8>,
+        local_addr: SocketAddr,
+        remote_addr: SocketAddr,
+    ) -> Box<Future<Item = Response, Error = ()>> {
         let socket = UdpSocket::bind(&local_addr).unwrap();
         let fut = socket
             .send_dgram(query, &remote_addr)
@@ -162,22 +168,23 @@ impl DoH {
         let mut sum_size = 0;
         let local_addr = self.local_bind_address.clone();
         let server_addr = self.server_address.clone();
-        let fut = body.and_then(move |chunk| {
-            sum_size += chunk.len();
-            if sum_size > MAX_DNS_QUESTION_LEN {
-                Err(hyper::error::Error::TooLarge)
-            } else {
-                Ok(chunk)
-            }
-        }).concat2()
-            .map_err(move |_err| ())
-            .map(move |chunk| chunk.to_vec())
-            .and_then(move |query| {
-                if query.len() < MIN_DNS_PACKET_LEN {
-                    return Box::new(future::err(())) as Box<Future<Item = _, Error = _>>;
+        let fut =
+            body.and_then(move |chunk| {
+                sum_size += chunk.len();
+                if sum_size > MAX_DNS_QUESTION_LEN {
+                    Err(hyper::error::Error::TooLarge)
+                } else {
+                    Ok(chunk)
                 }
-                Box::new(Self::proxy(query, local_addr, server_addr))
-            });
+            }).concat2()
+                .map_err(move |_err| ())
+                .map(move |chunk| chunk.to_vec())
+                .and_then(move |query| {
+                    if query.len() < MIN_DNS_PACKET_LEN {
+                        return Box::new(future::err(())) as Box<Future<Item = _, Error = _>>;
+                    }
+                    Box::new(Self::proxy(query, local_addr, server_addr))
+                });
         Box::new(fut)
     }
 }
