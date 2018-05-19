@@ -118,7 +118,7 @@ impl DoH {
                         return Box::new(future::ok(response));
                     }
                 };
-                let fut = Self::proxy(question);
+                let fut = self.proxy(question);
                 return Box::new(fut.map_err(|_| hyper::Error::Incomplete));
             }
             _ => {
@@ -128,19 +128,18 @@ impl DoH {
         Box::new(future::ok(response))
     }
 
-    fn proxy(query: Vec<u8>) -> Box<Future<Item = Response, Error = ()>> {
-        let local_addr = LOCAL_BIND_ADDRESS.parse().unwrap();
-        let socket = UdpSocket::bind(&local_addr).unwrap();
-        let remote_addr: SocketAddr = SERVER_ADDRESS.parse().unwrap();
+    fn proxy(&self, query: Vec<u8>) -> Box<Future<Item = Response, Error = ()>> {
+        let socket = UdpSocket::bind(&self.local_bind_address).unwrap();
+        let server_address_inner = self.server_address;
         let fut = socket
-            .send_dgram(query, &remote_addr)
+            .send_dgram(query, &self.server_address)
             .map_err(|_| ())
             .and_then(move |(socket, _)| {
                 let packet = vec![0; MAX_DNS_RESPONSE_LEN];
                 socket.recv_dgram(packet).map_err(|_| {})
             })
-            .and_then(move |(_socket, mut packet, len, server_addr)| {
-                if len < MIN_DNS_PACKET_LEN || server_addr != remote_addr {
+            .and_then(move |(_socket, mut packet, len, server_address)| {
+                if len < MIN_DNS_PACKET_LEN || server_address_inner != server_address {
                     return future::err(());
                 }
                 packet.truncate(len);
@@ -164,6 +163,7 @@ impl DoH {
 
     fn read_body_and_proxy(&self, body: Body) -> Box<Future<Item = Response, Error = ()>> {
         let mut sum_size = 0;
+        let inner = self.clone();
         let fut =
             body.and_then(move |chunk| {
                 sum_size += chunk.len();
@@ -179,7 +179,7 @@ impl DoH {
                     if query.len() < MIN_DNS_PACKET_LEN {
                         return Box::new(future::err(())) as Box<Future<Item = _, Error = _>>;
                     }
-                    Box::new(Self::proxy(query))
+                    Box::new(inner.proxy(query))
                 });
         Box::new(fut)
     }
@@ -200,6 +200,7 @@ fn main() {
     let listen_address = doh.listen_address;
     let listener = TcpListener::bind(&listen_address).unwrap();
     println!("Listening on http://{}", listen_address);
+    let doh = Rc::new(doh);
     let server = Http::new()
         .keep_alive(false)
         .serve_incoming(listener.incoming(), move || Ok(doh.clone()));
