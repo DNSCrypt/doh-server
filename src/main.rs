@@ -130,7 +130,7 @@ impl DoH {
 
     fn proxy(&self, query: Vec<u8>) -> Box<Future<Item = Response, Error = ()>> {
         let socket = UdpSocket::bind(&self.local_bind_address).unwrap();
-        let server_address_inner = self.server_address;
+        let expected_server_address = self.server_address;
         let fut = socket
             .send_dgram(query, &self.server_address)
             .map_err(|_| ())
@@ -138,8 +138,8 @@ impl DoH {
                 let packet = vec![0; MAX_DNS_RESPONSE_LEN];
                 socket.recv_dgram(packet).map_err(|_| {})
             })
-            .and_then(move |(_socket, mut packet, len, server_address)| {
-                if len < MIN_DNS_PACKET_LEN || server_address_inner != server_address {
+            .and_then(move |(_socket, mut packet, len, response_server_address)| {
+                if len < MIN_DNS_PACKET_LEN || expected_server_address != response_server_address {
                     return future::err(());
                 }
                 packet.truncate(len);
