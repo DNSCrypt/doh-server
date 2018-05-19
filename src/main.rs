@@ -153,7 +153,7 @@ impl DoH {
                 let response = response
                     .with_header(ContentLength(packet_len as u64))
                     .with_header(ContentType(
-                        "application/dns-udpwireformat".parse().unwrap(),
+                        "application/dns-message".parse().unwrap(),
                     ))
                     .with_header(CacheControl(vec![CacheDirective::MaxAge(ttl)]));
                 future::ok(response)
