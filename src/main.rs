@@ -20,10 +20,10 @@ use hyper::{Body, Method, StatusCode};
 use std::cell::RefCell;
 use std::net::SocketAddr;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::executor::current_thread;
 use tokio::net::{TcpListener, UdpSocket};
-use tokio_timer::Timer;
+use tokio_timer::{timer, Timer};
 
 const DNS_QUERY_PARAM: &str = "dns";
 const LISTEN_ADDRESS: &str = "127.0.0.1:3000";
@@ -47,7 +47,7 @@ struct DoH {
     path: String,
     max_clients: u32,
     timeout: Duration,
-    timers: Timer,
+    timer_handle: timer::Handle,
     clients_count: Rc<RefCell<u32>>,
 }
 
@@ -79,8 +79,8 @@ impl Service for DoH {
                 err
             });
         let timed = self
-            .timers
-            .timeout(fut.map_err(|_| {}), self.timeout)
+            .timer_handle
+            .deadline(fut.map_err(|_| {}), Instant::now() + self.timeout)
             .map_err(|_| hyper::Error::Timeout);
         Box::new(timed)
     }
@@ -152,9 +152,7 @@ impl DoH {
                 response.set_body(packet);
                 let response = response
                     .with_header(ContentLength(packet_len as u64))
-                    .with_header(ContentType(
-                        "application/dns-message".parse().unwrap(),
-                    ))
+                    .with_header(ContentType("application/dns-message".parse().unwrap()))
                     .with_header(CacheControl(vec![CacheDirective::MaxAge(ttl)]));
                 future::ok(response)
             });
@@ -194,7 +192,7 @@ fn main() {
         max_clients: MAX_CLIENTS,
         timeout: Duration::from_secs(TIMEOUT_SEC),
         clients_count: Rc::new(RefCell::new(0u32)),
-        timers: tokio_timer::wheel().build(),
+        timer_handle: Timer::default().handle(),
     };
     parse_opts(&mut doh);
     let listen_address = doh.listen_address;
