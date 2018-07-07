@@ -116,7 +116,7 @@ impl DoH {
         match *req.method() {
             Method::POST => {
                 let fut = self.read_body_and_proxy(req.into_body());
-                return Box::new(fut.map_err(|_| Error::Incomplete));
+                Box::new(fut.map_err(|_| Error::Incomplete))
             }
             Method::GET => {
                 let query = req.uri().query().unwrap_or("");
@@ -142,16 +142,16 @@ impl DoH {
                     }
                 };
                 let fut = self.proxy(question);
-                return Box::new(fut.map_err(|_| Error::Incomplete));
+                Box::new(fut.map_err(|_| Error::Incomplete))
             }
             _ => {
                 let response = Response::builder()
                     .status(StatusCode::METHOD_NOT_ALLOWED)
                     .body(Body::empty())
                     .unwrap();
-                return Box::new(future::ok(response));
+                Box::new(future::ok(response))
             }
-        };
+        }
     }
 
     fn proxy(&self, query: Vec<u8>) -> Box<Future<Item = Response<Body>, Error = ()> + Send> {
@@ -195,7 +195,7 @@ impl DoH {
         let mut sum_size = 0;
         let inner = self.clone();
         let fut = body
-            .map_err(|e| Error::Hyper(e))
+            .map_err(Error::Hyper)
             .and_then(move |chunk| {
                 sum_size += chunk.len();
                 if sum_size > MAX_DNS_QUESTION_LEN {
