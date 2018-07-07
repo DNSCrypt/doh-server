@@ -19,10 +19,10 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::executor::current_thread;
 use tokio::net::{TcpListener, UdpSocket};
-use tokio_timer::{timer, Timer};
+use tokio_timer::Timer;
 
 const DNS_QUERY_PARAM: &str = "dns";
 const LISTEN_ADDRESS: &str = "127.0.0.1:3000";
@@ -46,7 +46,7 @@ struct InnerDoH {
     path: String,
     max_clients: usize,
     timeout: Duration,
-    timer_handle: timer::Handle,
+    timers: Timer,
     clients_count: Arc<AtomicUsize>,
 }
 
@@ -101,8 +101,8 @@ impl Service for DoH {
                 err
             });
         let timed = inner
-            .timer_handle
-            .deadline(fut.map_err(|_| {}), Instant::now() + inner.timeout)
+            .timers
+            .timeout(fut.map_err(|_| {}), inner.timeout)
             .map_err(|_| Error::Timeout);
         Box::new(timed)
     }
@@ -235,7 +235,7 @@ fn main() {
         max_clients: MAX_CLIENTS,
         timeout: Duration::from_secs(TIMEOUT_SEC),
         clients_count: Arc::new(AtomicUsize::new(0)),
-        timer_handle: Timer::default().handle(),
+        timers: tokio_timer::wheel().build(),
     };
     parse_opts(&mut inner_doh);
     let doh = DoH {
