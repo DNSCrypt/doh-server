@@ -1,4 +1,3 @@
-const DNS_CLASS_IN: u16 = 1;
 const DNS_HEADER_SIZE: usize = 12;
 const DNS_MAX_HOSTNAME_LEN: usize = 256;
 const DNS_MAX_PACKET_SIZE: usize = 65_535;
@@ -100,17 +99,14 @@ pub fn min_ttl(
             return Err("Short packet");
         }
         let qtype = u16::from(packet[offset]) << 8 | u16::from(packet[offset + 1]);
-        let qclass = u16::from(packet[offset + 2]) << 8 | u16::from(packet[offset + 3]);
         let ttl = u32::from(packet[offset + 4]) << 24
             | u32::from(packet[offset + 5]) << 16
             | u32::from(packet[offset + 6]) << 8
             | u32::from(packet[offset + 7]);
         let rdlen = (u16::from(packet[offset + 8]) << 8 | u16::from(packet[offset + 9])) as usize;
         offset += 10;
-        if !(qtype == DNS_TYPE_OPT && qclass == DNS_CLASS_IN) {
-            if ttl < found_min_ttl {
-                found_min_ttl = ttl;
-            }
+        if qtype != DNS_TYPE_OPT && ttl < found_min_ttl {
+            found_min_ttl = ttl;
         }
         if rdlen > packet_len - offset {
             return Err("Record length would exceed packet length");
