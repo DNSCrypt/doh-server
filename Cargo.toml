@@ -10,10 +10,10 @@ repository = "https://github.com/jedisct1/rust-doh"
 categories = ["asynchronous", "network-programming","command-line-utilities"]
 
 [dependencies]
-base64 = "~0.9"
-clap = "~2"
-futures = "~0.1"
-hyper = "~0.11"
-tokio = "~0.1"
-tokio-timer = "~0.2"
+base64 = "0.9"
+clap = "2"
+futures = "0.1"
+hyper = "0.11"
+tokio = "0.1"
+tokio-timer = "0.2"
 clippy = {version = ">=0", optional = true}
