@@ -13,9 +13,9 @@ mod dns;
 use clap::{App, Arg};
 use futures::future;
 use futures::prelude::*;
-use hyper::service::Service;
 use hyper::server::conn::Http;
-use hyper::{Request, Response, Body, Method, StatusCode};
+use hyper::service::Service;
+use hyper::{Body, Method, Request, Response, StatusCode};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -102,7 +102,10 @@ impl Service for DoH {
 }
 
 impl DoH {
-    fn handle_client(&self, req: Request<Body>) -> Box<Future<Item = Response<Body>, Error = Error> + Send> {
+    fn handle_client(
+        &self,
+        req: Request<Body>,
+    ) -> Box<Future<Item = Response<Body>, Error = Error> + Send> {
         if req.uri().path() != self.path {
             let response = Response::builder()
                 .status(StatusCode::NOT_FOUND)
@@ -174,7 +177,10 @@ impl DoH {
                 let response = Response::builder()
                     .header(hyper::header::CONTENT_LENGTH, packet_len)
                     .header(hyper::header::CONTENT_TYPE, "application/dns-message")
-                    .header(hyper::header::CACHE_CONTROL, format!("max-age={}", ttl).as_str())
+                    .header(
+                        hyper::header::CACHE_CONTROL,
+                        format!("max-age={}", ttl).as_str(),
+                    )
                     .body(Body::from(packet))
                     .unwrap();
                 future::ok(response)
@@ -182,26 +188,31 @@ impl DoH {
         Box::new(fut)
     }
 
-    fn read_body_and_proxy(&self, body: Body) -> Box<Future<Item = Response<Body>, Error = ()> + Send> {
+    fn read_body_and_proxy(
+        &self,
+        body: Body,
+    ) -> Box<Future<Item = Response<Body>, Error = ()> + Send> {
         let mut sum_size = 0;
         let inner = self.clone();
-        let fut =
-            body.map_err(|e| Error::Hyper(e)).and_then(move |chunk| {
+        let fut = body
+            .map_err(|e| Error::Hyper(e))
+            .and_then(move |chunk| {
                 sum_size += chunk.len();
                 if sum_size > MAX_DNS_QUESTION_LEN {
                     Err(Error::TooLarge)
                 } else {
                     Ok(chunk)
                 }
-            }).concat2()
-                .map_err(move |_err| ())
-                .map(move |chunk| chunk.to_vec())
-                .and_then(move |query| {
-                    if query.len() < MIN_DNS_PACKET_LEN {
-                        return Box::new(future::err(())) as Box<Future<Item = _, Error = _> + Send>;
-                    }
-                    inner.proxy(query)
-                });
+            })
+            .concat2()
+            .map_err(move |_err| ())
+            .map(move |chunk| chunk.to_vec())
+            .and_then(move |query| {
+                if query.len() < MIN_DNS_PACKET_LEN {
+                    return Box::new(future::err(())) as Box<Future<Item = _, Error = _> + Send>;
+                }
+                inner.proxy(query)
+            });
         Box::new(fut)
     }
 }
