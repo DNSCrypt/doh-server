@@ -64,7 +64,6 @@ enum Error {
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        // Should match, i'm lazy...
         std::fmt::Debug::fmt(self, fmt)
     }
 }
