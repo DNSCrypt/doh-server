@@ -94,8 +94,7 @@ impl Service for DoH {
             .then(move |fut| {
                 clients_count_inner.fetch_sub(1, Ordering::Relaxed);
                 fut
-            })
-            .map_err(|err| {
+            }).map_err(|err| {
                 eprintln!("server error: {}", err);
                 err
             });
@@ -171,8 +170,7 @@ impl DoH {
             .and_then(move |(socket, _)| {
                 let packet = vec![0; MAX_DNS_RESPONSE_LEN];
                 socket.recv_dgram(packet).map_err(|_| {})
-            })
-            .and_then(move |(_socket, mut packet, len, response_server_address)| {
+            }).and_then(move |(_socket, mut packet, len, response_server_address)| {
                 if len < MIN_DNS_PACKET_LEN || expected_server_address != response_server_address {
                     return future::err(());
                 }
@@ -188,8 +186,7 @@ impl DoH {
                     .header(
                         hyper::header::CACHE_CONTROL,
                         format!("max-age={}", ttl).as_str(),
-                    )
-                    .body(Body::from(packet))
+                    ).body(Body::from(packet))
                     .unwrap();
                 future::ok(response)
             });
@@ -211,8 +208,7 @@ impl DoH {
                 } else {
                     Ok(chunk)
                 }
-            })
-            .concat2()
+            }).concat2()
             .map_err(move |_err| ())
             .map(move |chunk| chunk.to_vec())
             .and_then(move |query| {
@@ -237,12 +233,13 @@ fn main() {
         timers: tokio_timer::wheel().build(),
     };
     parse_opts(&mut inner_doh);
+    let path = inner_doh.path.clone();
     let doh = DoH {
         inner: Arc::new(inner_doh),
     };
     let listen_address = doh.inner.listen_address;
     let listener = TcpListener::bind(&listen_address).unwrap();
-    println!("Listening on http://{}", listen_address);
+    println!("Listening on http://{}{}", listen_address, path);
     let mut http = Http::new();
     http.keep_alive(false);
     let server = listener.incoming().for_each(move |io| {
@@ -266,61 +263,53 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .takes_value(true)
                 .default_value(LISTEN_ADDRESS)
                 .help("Address to listen to"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("server_address")
                 .short("u")
                 .long("server-address")
                 .takes_value(true)
                 .default_value(SERVER_ADDRESS)
                 .help("Address to connect to"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("local_bind_address")
                 .short("b")
                 .long("local-bind-address")
                 .takes_value(true)
                 .default_value(LOCAL_BIND_ADDRESS)
                 .help("Address to connect from"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("path")
                 .short("p")
                 .long("path")
                 .takes_value(true)
                 .default_value(PATH)
                 .help("URI path"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("max_clients")
                 .short("c")
                 .long("max-clients")
                 .takes_value(true)
                 .default_value(&max_clients)
                 .help("Maximum number of simultaneous clients"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("timeout")
                 .short("t")
                 .long("timeout")
                 .takes_value(true)
                 .default_value(&timeout_sec)
                 .help("Timeout, in seconds"),
-        )
-        .get_matches();
-    if let Some(listen_address) = matches.value_of("listen_address") {
-        inner_doh.listen_address = listen_address.parse().unwrap();
+        ).get_matches();
+    inner_doh.listen_address = matches.value_of("listen_address").unwrap().parse().unwrap();
+    inner_doh.server_address = matches.value_of("server_address").unwrap().parse().unwrap();
+    inner_doh.local_bind_address = matches
+        .value_of("local_bind_address")
+        .unwrap()
+        .parse()
+        .unwrap();
+    inner_doh.path = matches.value_of("path").unwrap().to_string();
+    if !inner_doh.path.starts_with('/') {
+        inner_doh.path = format!("/{}", inner_doh.path);
     }
-    if let Some(server_address) = matches.value_of("server_address") {
-        inner_doh.server_address = server_address.parse().unwrap();
-    }
-    if let Some(local_bind_address) = matches.value_of("local_bind_address") {
-        inner_doh.local_bind_address = local_bind_address.parse().unwrap();
-    }
-    if let Some(max_clients) = matches.value_of("max_clients") {
-        inner_doh.max_clients = max_clients.parse().unwrap();
-    }
-    if let Some(timeout) = matches.value_of("timeout") {
-        inner_doh.timeout = Duration::from_secs(timeout.parse().unwrap());
-    }
+    inner_doh.max_clients = matches.value_of("max_clients").unwrap().parse().unwrap();
+    inner_doh.timeout = Duration::from_secs(matches.value_of("timeout").unwrap().parse().unwrap());
 }
