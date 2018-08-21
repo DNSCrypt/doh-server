@@ -67,7 +67,16 @@ impl std::fmt::Display for Error {
         std::fmt::Debug::fmt(self, fmt)
     }
 }
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn description(&self) -> &str {
+        match self {
+            Error::Timeout => "Timeout",
+            Error::Incomplete => "Incomplete",
+            Error::TooLarge => "TooLarge",
+            Error::Hyper(_) => self.description(),
+        }
+    }
+}
 
 impl Service for DoH {
     type ReqBody = Body;
