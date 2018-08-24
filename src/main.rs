@@ -102,6 +102,7 @@ impl Service for DoH {
                 fut
             }).map_err(|err| {
                 eprintln!("server error: {}", err);
+                inner.clients_count.fetch_sub(1, Ordering::Relaxed);
                 err
             });
         let timed = inner
