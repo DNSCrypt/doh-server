@@ -95,14 +95,15 @@ impl Service for DoH {
             }
         }
         let clients_count_inner = inner.clients_count.clone();
+        let clients_count_inner_err = inner.clients_count.clone();
         let fut = self
             .handle_client(req)
             .then(move |fut| {
                 clients_count_inner.fetch_sub(1, Ordering::Relaxed);
                 fut
-            }).map_err(|err| {
+            }).map_err(move |err| {
                 eprintln!("server error: {}", err);
-                inner.clients_count.fetch_sub(1, Ordering::Relaxed);
+                clients_count_inner_err.fetch_sub(1, Ordering::Relaxed);
                 err
             });
         let timed = inner
