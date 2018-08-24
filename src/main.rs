@@ -3,6 +3,7 @@ extern crate clap;
 extern crate futures;
 extern crate hyper;
 extern crate tokio;
+extern crate tokio_current_thread;
 extern crate tokio_timer;
 
 mod dns;
@@ -17,7 +18,6 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::executor::current_thread;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio_timer::Timer;
 
@@ -253,10 +253,10 @@ fn main() {
     let server = listener.incoming().for_each(move |io| {
         let service = doh.clone();
         let conn = http.serve_connection(io, service).map_err(|_| {});
-        current_thread::spawn(conn);
+        tokio_current_thread::spawn(conn);
         Ok(())
     });
-    current_thread::block_on_all(server).unwrap();
+    tokio_current_thread::block_on_all(server).unwrap();
 }
 
 fn parse_opts(inner_doh: &mut InnerDoH) {
