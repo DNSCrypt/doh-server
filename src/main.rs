@@ -84,9 +84,9 @@ impl Service for DoH {
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let inner = &self.inner;
         {
-            let count = inner.clients_count.fetch_add(1, Ordering::Relaxed);
-            if count > inner.max_clients {
-                inner.clients_count.fetch_sub(1, Ordering::Relaxed);
+            let count = DoH::increment_clients_count(&inner.clients_count);
+            if count >= inner.max_clients {
+                DoH::decrement_clients_count(&inner.clients_count);
                 let response = Response::builder()
                     .status(StatusCode::TOO_MANY_REQUESTS)
                     .body(Body::empty())
@@ -96,20 +96,24 @@ impl Service for DoH {
         }
         let clients_count_inner = inner.clients_count.clone();
         let clients_count_inner_err = inner.clients_count.clone();
+        let clients_count_inner_timeout = inner.clients_count.clone();
         let fut = self
             .handle_client(req)
             .then(move |fut| {
-                clients_count_inner.fetch_sub(1, Ordering::Relaxed);
+                DoH::decrement_clients_count(&clients_count_inner);
                 fut
-            }).map_err(move |err| {
-                eprintln!("server error: {}", err);
-                clients_count_inner_err.fetch_sub(1, Ordering::Relaxed);
+            })
+            .map_err(move |err| {
+                DoH::decrement_clients_count(&clients_count_inner_err);
                 err
             });
         let timed = inner
             .timers
             .timeout(fut.map_err(|_| {}), inner.timeout)
-            .map_err(|_| Error::Timeout);
+            .map_err(move |_| {
+                DoH::decrement_clients_count(&clients_count_inner_timeout);
+                Error::Timeout
+            });
         Box::new(timed)
     }
 }
@@ -178,7 +182,8 @@ impl DoH {
             .and_then(move |(socket, _)| {
                 let packet = vec![0; MAX_DNS_RESPONSE_LEN];
                 socket.recv_dgram(packet).map_err(|_| {})
-            }).and_then(move |(_socket, mut packet, len, response_server_address)| {
+            })
+            .and_then(move |(_socket, mut packet, len, response_server_address)| {
                 if len < MIN_DNS_PACKET_LEN || expected_server_address != response_server_address {
                     return future::err(());
                 }
@@ -194,7 +199,8 @@ impl DoH {
                     .header(
                         hyper::header::CACHE_CONTROL,
                         format!("max-age={}", ttl).as_str(),
-                    ).body(Body::from(packet))
+                    )
+                    .body(Body::from(packet))
                     .unwrap();
                 future::ok(response)
             });
@@ -216,7 +222,8 @@ impl DoH {
                 } else {
                     Ok(chunk)
                 }
-            }).concat2()
+            })
+            .concat2()
             .map_err(move |_err| ())
             .map(move |chunk| chunk.to_vec())
             .and_then(move |query| {
@@ -226,6 +233,18 @@ impl DoH {
                 inner.proxy(query)
             });
         Box::new(fut)
+    }
+
+    fn increment_clients_count(clients_count: &Arc<AtomicUsize>) -> usize {
+        clients_count.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn decrement_clients_count(clients_count: &Arc<AtomicUsize>) {
+        while {
+            let count = clients_count.load(Ordering::Relaxed);
+            count > 0
+                && clients_count.compare_and_swap(count, count - 1, Ordering::Relaxed) != count
+        } {}
     }
 }
 
@@ -271,42 +290,48 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .takes_value(true)
                 .default_value(LISTEN_ADDRESS)
                 .help("Address to listen to"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("server_address")
                 .short("u")
                 .long("server-address")
                 .takes_value(true)
                 .default_value(SERVER_ADDRESS)
                 .help("Address to connect to"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("local_bind_address")
                 .short("b")
                 .long("local-bind-address")
                 .takes_value(true)
                 .default_value(LOCAL_BIND_ADDRESS)
                 .help("Address to connect from"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("path")
                 .short("p")
                 .long("path")
                 .takes_value(true)
                 .default_value(PATH)
                 .help("URI path"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("max_clients")
                 .short("c")
                 .long("max-clients")
                 .takes_value(true)
                 .default_value(&max_clients)
                 .help("Maximum number of simultaneous clients"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("timeout")
                 .short("t")
                 .long("timeout")
                 .takes_value(true)
                 .default_value(&timeout_sec)
                 .help("Timeout, in seconds"),
-        ).get_matches();
+        )
+        .get_matches();
     inner_doh.listen_address = matches.value_of("listen_address").unwrap().parse().unwrap();
     inner_doh.server_address = matches.value_of("server_address").unwrap().parse().unwrap();
     inner_doh.local_bind_address = matches
