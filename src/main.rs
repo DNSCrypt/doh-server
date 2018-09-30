@@ -35,6 +35,24 @@ const MAX_TTL: u32 = 86400 * 7;
 const MIN_TTL: u32 = 1;
 const ERR_TTL: u32 = 1;
 
+#[derive(Debug, Clone, Default)]
+struct ClientsCount(Arc<AtomicUsize>);
+
+impl ClientsCount {
+    fn increment(&self) -> usize {
+        self.0.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn decrement(&self) -> usize {
+        let mut count;
+        while {
+            count = self.0.load(Ordering::Relaxed);
+            count > 0 && self.0.compare_and_swap(count, count - 1, Ordering::Relaxed) != count
+        } {}
+        count
+    }
+}
+
 #[derive(Debug)]
 struct InnerDoH {
     listen_address: SocketAddr,
@@ -44,7 +62,7 @@ struct InnerDoH {
     max_clients: usize,
     timeout: Duration,
     timers: Timer,
-    clients_count: Arc<AtomicUsize>,
+    clients_count: ClientsCount,
 }
 
 #[derive(Clone, Debug)]
@@ -84,9 +102,9 @@ impl Service for DoH {
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let inner = &self.inner;
         {
-            let count = DoH::increment_clients_count(&inner.clients_count);
+            let count = inner.clients_count.increment();
             if count >= inner.max_clients {
-                DoH::decrement_clients_count(&inner.clients_count);
+                inner.clients_count.decrement();
                 let response = Response::builder()
                     .status(StatusCode::TOO_MANY_REQUESTS)
                     .body(Body::empty())
@@ -100,18 +118,18 @@ impl Service for DoH {
         let fut = self
             .handle_client(req)
             .then(move |fut| {
-                DoH::decrement_clients_count(&clients_count_inner);
+                clients_count_inner.decrement();
                 fut
             })
             .map_err(move |err| {
-                DoH::decrement_clients_count(&clients_count_inner_err);
+                clients_count_inner_err.decrement();
                 err
             });
         let timed = inner
             .timers
             .timeout(fut.map_err(|_| {}), inner.timeout)
             .map_err(move |_| {
-                DoH::decrement_clients_count(&clients_count_inner_timeout);
+                clients_count_inner_timeout.decrement();
                 Error::Timeout
             });
         Box::new(timed)
@@ -234,18 +252,6 @@ impl DoH {
             });
         Box::new(fut)
     }
-
-    fn increment_clients_count(clients_count: &Arc<AtomicUsize>) -> usize {
-        clients_count.fetch_add(1, Ordering::Relaxed)
-    }
-
-    fn decrement_clients_count(clients_count: &Arc<AtomicUsize>) {
-        while {
-            let count = clients_count.load(Ordering::Relaxed);
-            count > 0
-                && clients_count.compare_and_swap(count, count - 1, Ordering::Relaxed) != count
-        } {}
-    }
 }
 
 fn main() {
@@ -256,7 +262,7 @@ fn main() {
         path: PATH.to_string(),
         max_clients: MAX_CLIENTS,
         timeout: Duration::from_secs(TIMEOUT_SEC),
-        clients_count: Arc::new(AtomicUsize::new(0)),
+        clients_count: ClientsCount::default(),
         timers: tokio_timer::wheel().build(),
     };
     parse_opts(&mut inner_doh);
