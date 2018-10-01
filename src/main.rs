@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, UdpSocket};
-use tokio_timer::Timer;
+use tokio::prelude::FutureExt;
 
 const DNS_QUERY_PARAM: &str = "dns";
 const LISTEN_ADDRESS: &str = "127.0.0.1:3000";
@@ -61,7 +61,6 @@ struct InnerDoH {
     path: String,
     max_clients: usize,
     timeout: Duration,
-    timers: Timer,
     clients_count: ClientsCount,
 }
 
@@ -125,9 +124,9 @@ impl Service for DoH {
                 clients_count_inner_err.decrement();
                 err
             });
-        let timed = inner
-            .timers
-            .timeout(fut.map_err(|_| {}), inner.timeout)
+        let timed = fut
+            .map_err(|_| {})
+            .timeout(inner.timeout)
             .map_err(move |_| {
                 clients_count_inner_timeout.decrement();
                 Error::Timeout
@@ -263,7 +262,6 @@ fn main() {
         max_clients: MAX_CLIENTS,
         timeout: Duration::from_secs(TIMEOUT_SEC),
         clients_count: ClientsCount::default(),
-        timers: tokio_timer::wheel().build(),
     };
     parse_opts(&mut inner_doh);
     let path = inner_doh.path.clone();
@@ -278,10 +276,10 @@ fn main() {
     let server = listener.incoming().for_each(move |io| {
         let service = doh.clone();
         let conn = http.serve_connection(io, service).map_err(|_| {});
-        tokio_current_thread::spawn(conn);
+        tokio::spawn(conn);
         Ok(())
     });
-    tokio_current_thread::block_on_all(server).unwrap();
+    tokio::run(server.map_err(|_| {}));
 }
 
 fn parse_opts(inner_doh: &mut InnerDoH) {
