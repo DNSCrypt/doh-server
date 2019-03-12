@@ -258,16 +258,17 @@ fn main() {
     http.keep_alive(false);
     let server = listener.incoming().for_each(move |io| {
         let service = doh.clone();
-        doh.inner.clients_count.increment();
-        let clients_count = doh.inner.clients_count.clone();
+        let clients_count = &doh.inner.clients_count;
+        let clients_count_inner = clients_count.clone();
         let conn = http
             .serve_connection(io, service)
             .timeout(timeout)
             .map_err(|_| {})
             .then(move |fut| {
-                clients_count.decrement();
+                clients_count_inner.decrement();
                 fut
             });
+        clients_count.increment();
         tokio::spawn(conn);
         Ok(())
     });
