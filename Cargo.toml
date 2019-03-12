@@ -8,6 +8,7 @@ license = "MIT"
 homepage = "https://github.com/jedisct1/rust-doh"
 repository = "https://github.com/jedisct1/rust-doh"
 categories = ["asynchronous", "network-programming","command-line-utilities"]
+edition = "2018"
 
 [dependencies]
 base64 = "0.10"

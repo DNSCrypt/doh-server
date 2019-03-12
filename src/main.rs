@@ -1,10 +1,6 @@
-extern crate base64;
-extern crate clap;
-extern crate futures;
-extern crate hyper;
-extern crate tokio;
-extern crate tokio_current_thread;
-extern crate tokio_timer;
+use base64;
+use hyper;
+use tokio;
 
 mod dns;
 
@@ -80,7 +76,7 @@ enum Error {
     Hyper(hyper::Error),
 }
 impl std::fmt::Display for Error {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         std::fmt::Debug::fmt(self, fmt)
     }
 }
@@ -98,7 +94,7 @@ impl Service for DoH {
     type ReqBody = Body;
     type ResBody = Body;
     type Error = Error;
-    type Future = Box<Future<Item = Response<Body>, Error = Self::Error> + Send>;
+    type Future = Box<dyn Future<Item = Response<Body>, Error = Self::Error> + Send>;
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let inner = &self.inner;
@@ -121,7 +117,7 @@ impl DoH {
     fn handle_client(
         &self,
         req: Request<Body>,
-    ) -> Box<Future<Item = Response<Body>, Error = Error> + Send> {
+    ) -> Box<dyn Future<Item = Response<Body>, Error = Error> + Send> {
         let inner = &self.inner;
         if req.uri().path() != inner.path {
             let response = Response::builder()
@@ -171,7 +167,7 @@ impl DoH {
         }
     }
 
-    fn proxy(&self, query: Vec<u8>) -> Box<Future<Item = Response<Body>, Error = ()> + Send> {
+    fn proxy(&self, query: Vec<u8>) -> Box<dyn Future<Item = Response<Body>, Error = ()> + Send> {
         let inner = &self.inner;
         let socket = UdpSocket::bind(&inner.local_bind_address).unwrap();
         let expected_server_address = inner.server_address;
@@ -209,7 +205,7 @@ impl DoH {
     fn read_body_and_proxy(
         &self,
         body: Body,
-    ) -> Box<Future<Item = Response<Body>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Response<Body>, Error = ()> + Send> {
         let mut sum_size = 0;
         let inner = self.clone();
         let fut = body
@@ -227,7 +223,8 @@ impl DoH {
             .map(move |chunk| chunk.to_vec())
             .and_then(move |query| {
                 if query.len() < MIN_DNS_PACKET_LEN {
-                    return Box::new(future::err(())) as Box<Future<Item = _, Error = _> + Send>;
+                    return Box::new(future::err(()))
+                        as Box<dyn Future<Item = _, Error = _> + Send>;
                 }
                 inner.proxy(query)
             });
