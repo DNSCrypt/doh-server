@@ -39,6 +39,10 @@ const ERR_TTL: u32 = 1;
 struct ClientsCount(Arc<AtomicUsize>);
 
 impl ClientsCount {
+    fn current(&self) -> usize {
+        self.0.load(Ordering::Relaxed)
+    }
+
     fn increment(&self) -> usize {
         self.0.fetch_add(1, Ordering::Relaxed)
     }
@@ -71,7 +75,6 @@ struct DoH {
 
 #[derive(Debug)]
 enum Error {
-    Timeout,
     Incomplete,
     TooLarge,
     Hyper(hyper::Error),
@@ -84,7 +87,6 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match *self {
-            Error::Timeout => "Timeout",
             Error::Incomplete => "Incomplete",
             Error::TooLarge => "TooLarge",
             Error::Hyper(_) => self.description(),
@@ -101,9 +103,8 @@ impl Service for DoH {
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let inner = &self.inner;
         {
-            let count = inner.clients_count.increment();
+            let count = inner.clients_count.current();
             if count >= inner.max_clients {
-                inner.clients_count.decrement();
                 let response = Response::builder()
                     .status(StatusCode::TOO_MANY_REQUESTS)
                     .body(Body::empty())
@@ -111,27 +112,8 @@ impl Service for DoH {
                 return Box::new(future::ok(response));
             }
         }
-        let clients_count_inner = inner.clients_count.clone();
-        let clients_count_inner_err = inner.clients_count.clone();
-        let clients_count_inner_timeout = inner.clients_count.clone();
-        let fut = self
-            .handle_client(req)
-            .then(move |fut| {
-                clients_count_inner.decrement();
-                fut
-            })
-            .map_err(move |err| {
-                clients_count_inner_err.decrement();
-                err
-            });
-        let timed = fut
-            .map_err(|_| {})
-            .timeout(inner.timeout)
-            .map_err(move |_| {
-                clients_count_inner_timeout.decrement();
-                Error::Timeout
-            });
-        Box::new(timed)
+        let fut = self.handle_client(req);
+        Box::new(fut)
     }
 }
 
@@ -264,6 +246,7 @@ fn main() {
         clients_count: ClientsCount::default(),
     };
     parse_opts(&mut inner_doh);
+    let timeout = inner_doh.timeout;
     let path = inner_doh.path.clone();
     let doh = DoH {
         inner: Arc::new(inner_doh),
@@ -275,7 +258,16 @@ fn main() {
     http.keep_alive(false);
     let server = listener.incoming().for_each(move |io| {
         let service = doh.clone();
-        let conn = http.serve_connection(io, service).map_err(|_| {});
+        doh.inner.clients_count.increment();
+        let clients_count = doh.inner.clients_count.clone();
+        let conn = http
+            .serve_connection(io, service)
+            .timeout(timeout)
+            .map_err(|_| {})
+            .then(move |fut| {
+                clients_count.decrement();
+                fut
+            });
         tokio::spawn(conn);
         Ok(())
     });
