@@ -10,7 +10,7 @@ repository = "https://github.com/jedisct1/rust-doh"
 categories = ["asynchronous", "network-programming","command-line-utilities"]
 
 [dependencies]
-base64 = "0.9"
+base64 = "0.10"
 clap = "2"
 futures = "0.1"
 hyper = "0.12"
