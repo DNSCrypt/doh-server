@@ -1,3 +1,6 @@
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 use base64;
 use hyper;
 use tokio;
