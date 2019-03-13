@@ -24,6 +24,17 @@ fn arcount(packet: &[u8]) -> u16 {
     (u16::from(packet[10]) << 8) | u16::from(packet[11])
 }
 
+fn arcount_inc(packet: &mut [u8]) -> Result<(), &'static str> {
+    let mut arcount = arcount(packet);
+    if arcount >= 0xffff {
+        return Err("Too many additional records");
+    }
+    arcount += 1;
+    packet[10] = (arcount >> 8) as u8;
+    packet[11] = arcount as u8;
+    Ok(())
+}
+
 fn skip_name(packet: &[u8], offset: usize) -> Result<(usize, u16), &'static str> {
     let packet_len = packet.len();
     if offset >= packet_len - 1 {
@@ -104,10 +115,10 @@ pub fn min_ttl(
             | u32::from(packet[offset + 6]) << 8
             | u32::from(packet[offset + 7]);
         let rdlen = (u16::from(packet[offset + 8]) << 8 | u16::from(packet[offset + 9])) as usize;
-        offset += 10;
         if qtype != DNS_TYPE_OPT && ttl < found_min_ttl {
             found_min_ttl = ttl;
         }
+        offset += 10;
         if rdlen > packet_len - offset {
             return Err("Record length would exceed packet length");
         }
@@ -120,4 +131,95 @@ pub fn min_ttl(
         return Err("Garbage after packet");
     }
     Ok(found_min_ttl)
+}
+
+pub fn set_edns_max_payload_size(
+    packet: &mut Vec<u8>,
+    max_payload_size: u16,
+) -> Result<(), &'static str> {
+    if qdcount(packet) != 1 {
+        return Err("Unsupported number of questions");
+    }
+    let packet_len = packet.len();
+    if packet_len <= DNS_OFFSET_QUESTION {
+        return Err("Short packet");
+    }
+    if packet_len >= DNS_MAX_PACKET_SIZE {
+        return Err("Large packet");
+    }
+    let mut offset = match skip_name(packet, DNS_OFFSET_QUESTION) {
+        Ok(offset) => offset.0,
+        Err(e) => return Err(e),
+    };
+    assert!(offset > DNS_OFFSET_QUESTION);
+    if 4 > packet_len - offset {
+        return Err("Short packet");
+    }
+    offset += 4;
+    let ancount = ancount(packet);
+    let nscount = nscount(packet);
+    let arcount = arcount(packet);
+    for _ in 0..ancount + nscount {
+        offset = match skip_name(packet, offset) {
+            Ok(offset) => offset.0,
+            Err(e) => return Err(e),
+        };
+        if 10 > packet_len - offset {
+            return Err("Short packet");
+        }
+        let rdlen = (u16::from(packet[offset + 8]) << 8 | u16::from(packet[offset + 9])) as usize;
+        offset += 10;
+        if rdlen > packet_len - offset {
+            return Err("Record length would exceed packet length");
+        }
+        offset += rdlen;
+    }
+    let mut edns_payload_set = false;
+    for _ in 0..arcount {
+        offset = match skip_name(packet, offset) {
+            Ok(offset) => offset.0,
+            Err(e) => return Err(e),
+        };
+        if 10 > packet_len - offset {
+            return Err("Short packet");
+        }
+        let qtype = u16::from(packet[offset]) << 8 | u16::from(packet[offset + 1]);
+        let rdlen = (u16::from(packet[offset + 8]) << 8 | u16::from(packet[offset + 9])) as usize;
+        if qtype == DNS_TYPE_OPT {
+            if edns_payload_set {
+                return Err("Duplicate OPT RR found");
+            }
+            packet[offset + 2] = (max_payload_size >> 8) as u8;
+            packet[offset + 3] = max_payload_size as u8;
+            edns_payload_set = true;
+        }
+        offset += 10;
+        if rdlen > packet_len - offset {
+            return Err("Record length would exceed packet length");
+        }
+        offset += rdlen;
+    }
+    if edns_payload_set {
+        return Ok(());
+    }
+    let opt_rr: [u8; 11] = [
+        0,
+        (DNS_TYPE_OPT >> 8) as u8,
+        DNS_TYPE_OPT as u8,
+        (max_payload_size >> 8) as u8,
+        max_payload_size as u8,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
+    if DNS_MAX_PACKET_SIZE - packet.len() < opt_rr.len() {
+        return Err("Packet would be too large to add a new record");
+    }
+    arcount_inc(packet)?;
+    packet.extend(&opt_rr);
+
+    Ok(())
 }

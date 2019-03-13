@@ -167,7 +167,11 @@ impl DoH {
         }
     }
 
-    fn proxy(&self, query: Vec<u8>) -> Box<dyn Future<Item = Response<Body>, Error = ()> + Send> {
+    fn proxy(
+        &self,
+        mut query: Vec<u8>,
+    ) -> Box<dyn Future<Item = Response<Body>, Error = ()> + Send> {
+        let _ = dns::set_edns_max_payload_size(&mut query, MAX_DNS_RESPONSE_LEN as u16);
         let inner = &self.inner;
         let socket = UdpSocket::bind(&inner.local_bind_address).unwrap();
         let expected_server_address = inner.server_address;
