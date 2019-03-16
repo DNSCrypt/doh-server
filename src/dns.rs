@@ -152,8 +152,8 @@ pub fn min_ttl(
     let nscount = nscount(packet);
     let arcount = arcount(packet);
     let rrcount = ancount + nscount + arcount;
-    let mut found_min_ttl = if rrcount > 0 { max_ttl } else { failure_ttl };
 
+    let mut found_min_ttl = if rrcount > 0 { max_ttl } else { failure_ttl };
     offset = traverse_rrs(packet, offset, rrcount, |offset| {
         let qtype = u16::from(packet[offset]) << 8 | u16::from(packet[offset + 1]);
         let ttl = u32::from(packet[offset + 4]) << 24
@@ -165,7 +165,6 @@ pub fn min_ttl(
         }
         Ok(())
     })?;
-
     if found_min_ttl < min_ttl {
         found_min_ttl = min_ttl;
     }

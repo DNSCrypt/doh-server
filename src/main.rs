@@ -31,8 +31,8 @@ const PATH: &str = "/dns-query";
 const SERVER_ADDRESS: &str = "9.9.9.9:53";
 const TIMEOUT_SEC: u64 = 10;
 const MAX_TTL: u32 = 86400 * 7;
-const MIN_TTL: u32 = 1;
-const ERR_TTL: u32 = 1;
+const MIN_TTL: u32 = 10;
+const ERR_TTL: u32 = 2;
 
 #[derive(Debug, Clone, Default)]
 struct ClientsCount(Arc<AtomicUsize>);
@@ -65,6 +65,9 @@ struct InnerDoH {
     max_clients: usize,
     timeout: Duration,
     clients_count: ClientsCount,
+    min_ttl: u32,
+    max_ttl: u32,
+    err_ttl: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -178,6 +181,7 @@ impl DoH {
         let inner = &self.inner;
         let socket = UdpSocket::bind(&inner.local_bind_address).unwrap();
         let expected_server_address = inner.server_address;
+        let (min_ttl, max_ttl, err_ttl) = (inner.min_ttl, inner.max_ttl, inner.err_ttl);
         let fut = socket
             .send_dgram(query, &inner.server_address)
             .map_err(|_| ())
@@ -190,9 +194,9 @@ impl DoH {
                     return future::err(());
                 }
                 packet.truncate(len);
-                let ttl = match dns::min_ttl(&packet, MIN_TTL, MAX_TTL, ERR_TTL) {
+                let ttl = match dns::min_ttl(&packet, min_ttl, max_ttl, err_ttl) {
                     Err(_) => return future::err(()),
-                    Ok(min_ttl) => min_ttl,
+                    Ok(ttl) => ttl,
                 };
                 let packet_len = packet.len();
                 let response = Response::builder()
@@ -248,6 +252,9 @@ fn main() {
         max_clients: MAX_CLIENTS,
         timeout: Duration::from_secs(TIMEOUT_SEC),
         clients_count: ClientsCount::default(),
+        min_ttl: MIN_TTL,
+        max_ttl: MAX_TTL,
+        err_ttl: ERR_TTL,
     };
     parse_opts(&mut inner_doh);
     let timeout = inner_doh.timeout;
@@ -282,6 +289,9 @@ fn main() {
 fn parse_opts(inner_doh: &mut InnerDoH) {
     let max_clients = MAX_CLIENTS.to_string();
     let timeout_sec = TIMEOUT_SEC.to_string();
+    let min_ttl = MIN_TTL.to_string();
+    let max_ttl = MAX_TTL.to_string();
+    let err_ttl = ERR_TTL.to_string();
     let matches = App::new("doh-proxy")
         .about("A DNS-over-HTTP server proxy")
         .arg(
@@ -332,6 +342,30 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .default_value(&timeout_sec)
                 .help("Timeout, in seconds"),
         )
+        .arg(
+            Arg::with_name("min_ttl")
+                .short("T")
+                .long("min-ttl")
+                .takes_value(true)
+                .default_value(&min_ttl)
+                .help("Minimum TTL, in seconds"),
+        )
+        .arg(
+            Arg::with_name("max_ttl")
+                .short("X")
+                .long("max-ttl")
+                .takes_value(true)
+                .default_value(&max_ttl)
+                .help("Maximum TTL, in seconds"),
+        )
+        .arg(
+            Arg::with_name("err_ttl")
+                .short("E")
+                .long("err-ttl")
+                .takes_value(true)
+                .default_value(&err_ttl)
+                .help("TTL for errors, in seconds"),
+        )
         .get_matches();
     inner_doh.listen_address = matches.value_of("listen_address").unwrap().parse().unwrap();
     inner_doh.server_address = matches.value_of("server_address").unwrap().parse().unwrap();
@@ -346,4 +380,7 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
     }
     inner_doh.max_clients = matches.value_of("max_clients").unwrap().parse().unwrap();
     inner_doh.timeout = Duration::from_secs(matches.value_of("timeout").unwrap().parse().unwrap());
+    inner_doh.min_ttl = matches.value_of("min_ttl").unwrap().parse().unwrap();
+    inner_doh.max_ttl = matches.value_of("max_ttl").unwrap().parse().unwrap();
+    inner_doh.err_ttl = matches.value_of("err_ttl").unwrap().parse().unwrap();
 }
