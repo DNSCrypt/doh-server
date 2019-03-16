@@ -1,6 +1,6 @@
 [package]
 name = "doh-proxy"
-version = "0.1.12"
+version = "0.1.13"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "A DNS-over-HTTPS (DoH) proxy"
 keywords = ["dns","https","doh","proxy"]
@@ -13,9 +13,9 @@ edition = "2018"
 [dependencies]
 base64 = "0.10"
 clap = "2"
-futures = "0.1"
-hyper = "0.12"
+futures = "0.1.25"
+hyper = "0.12.25"
 jemallocator = "0.1"
-tokio = "0.1"
-tokio-current-thread = "0.1"
-tokio-timer = "0.2"
+tokio = "0.1.17"
+tokio-current-thread = "0.1.5"
+tokio-timer = "0.2.10"
