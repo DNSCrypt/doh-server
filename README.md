@@ -22,11 +22,14 @@ FLAGS:
     -V, --version    Prints version information
 
 OPTIONS:
-    -l, --listen_address <listen_address>            Address to listen to [default: 127.0.0.1:3000]
-    -b, --local_bind_address <local_bind_address>    Address to connect from [default: 0.0.0.0:0]
-    -c, --max_clients <max_clients>                  Maximum number of simultaneous clients [default: 512]
+    -E, --err-ttl <err_ttl>                          TTL for errors, in seconds [default: 2]
+    -l, --listen-address <listen_address>            Address to listen to [default: 127.0.0.1:3000]
+    -b, --local-bind-address <local_bind_address>    Address to connect from [default: 0.0.0.0:0]
+    -c, --max-clients <max_clients>                  Maximum number of simultaneous clients [default: 512]
+    -X, --max-ttl <max_ttl>                          Maximum TTL, in seconds [default: 604800]
+    -T, --min-ttl <min_ttl>                          Minimum TTL, in seconds [default: 10]
     -p, --path <path>                                URI path [default: /dns-query]
-    -u, --server_address <server_address>            Address to connect to [default: 9.9.9.9:53]
+    -u, --server-address <server_address>            Address to connect to [default: 9.9.9.9:53]
     -t, --timeout <timeout>                          Timeout, in seconds [default: 10]
 ```
 
