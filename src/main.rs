@@ -6,6 +6,7 @@ use hyper;
 use tokio;
 
 mod dns;
+mod utils;
 
 use clap::{App, Arg};
 use futures::future;
@@ -20,6 +21,7 @@ use std::time::Duration;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::prelude::FutureExt;
 
+const BLOCK_SIZE: usize = 128;
 const DNS_QUERY_PARAM: &str = "dns";
 const LISTEN_ADDRESS: &str = "127.0.0.1:3000";
 const LOCAL_BIND_ADDRESS: &str = "0.0.0.0:0";
@@ -202,6 +204,7 @@ impl DoH {
                 let response = Response::builder()
                     .header(hyper::header::CONTENT_LENGTH, packet_len)
                     .header(hyper::header::CONTENT_TYPE, "application/dns-message")
+                    .header("X-Padding", utils::padding_string(packet_len, BLOCK_SIZE))
                     .header(
                         hyper::header::CACHE_CONTROL,
                         format!("max-age={}", ttl).as_str(),
