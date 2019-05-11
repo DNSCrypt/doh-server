@@ -123,7 +123,7 @@ fn traverse_rrs_mut<F: FnMut(&mut [u8], usize) -> Result<(), &'static str>>(
     Ok(offset)
 }
 
-pub fn min_ttl(
+pub(crate) fn min_ttl(
     packet: &[u8],
     min_ttl: u32,
     max_ttl: u32,
@@ -196,7 +196,7 @@ fn add_edns_section(packet: &mut Vec<u8>, max_payload_size: u16) -> Result<(), &
     Ok(())
 }
 
-pub fn set_edns_max_payload_size(
+pub(crate) fn set_edns_max_payload_size(
     packet: &mut Vec<u8>,
     max_payload_size: u16,
 ) -> Result<(), &'static str> {
