@@ -1,6 +1,6 @@
 [package]
 name = "doh-proxy"
-version = "0.1.13"
+version = "0.1.14"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "A DNS-over-HTTPS (DoH) proxy"
 keywords = ["dns","https","doh","proxy"]
