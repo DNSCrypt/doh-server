@@ -1,25 +1,30 @@
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-use base64;
-use hyper;
-use tokio;
-
 mod dns;
 mod utils;
 
+use base64;
 use clap::{App, Arg};
 use futures::future;
 use futures::prelude::*;
+use futures::stream::Stream;
+use hyper;
 use hyper::server::conn::Http;
 use hyper::service::Service;
 use hyper::{Body, Method, Request, Response, StatusCode};
+use native_tls::{self, Identity};
+use std::fs::File;
+use std::io::{self, Read};
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio;
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::prelude::FutureExt;
+use tokio::prelude::{AsyncRead, AsyncWrite, FutureExt};
+use tokio_tls::TlsAcceptor;
 
 const BLOCK_SIZE: usize = 128;
 const DNS_QUERY_PARAM: &str = "dns";
@@ -60,6 +65,8 @@ impl ClientsCount {
 
 #[derive(Debug)]
 struct InnerDoH {
+    tls_cert_path: Option<PathBuf>,
+    tls_cert_password: Option<String>,
     listen_address: SocketAddr,
     local_bind_address: SocketAddr,
     server_address: SocketAddr,
@@ -246,8 +253,57 @@ impl DoH {
     }
 }
 
+fn create_tls_acceptor<P>(path: P, password: &str) -> io::Result<TlsAcceptor>
+where
+    P: AsRef<Path>,
+{
+    let identity_bin = {
+        let mut fp = File::open(path)?;
+        let mut identity_bin = vec![];
+        fp.read_to_end(&mut identity_bin)?;
+        identity_bin
+    };
+    let identity = Identity::from_pkcs12(&identity_bin, password).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Unusable PKCS12-encoded identity. The encoding and/or the password may be wrong",
+        )
+    })?;
+    let native_acceptor = native_tls::TlsAcceptor::new(identity).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Unable to use the provided PKCS12-encoded identity",
+        )
+    })?;
+    Ok(TlsAcceptor::from(native_acceptor))
+}
+
+fn client_serve<I>(
+    clients_count: ClientsCount,
+    stream: I,
+    http: Http,
+    service: DoH,
+    timeout: Duration,
+) where
+    I: AsyncRead + AsyncWrite + Send + 'static,
+{
+    let clients_count_inner = clients_count.clone();
+    let conn = http
+        .serve_connection(stream, service)
+        .timeout(timeout)
+        .map_err(|_| {})
+        .then(move |fut| {
+            clients_count_inner.decrement();
+            fut
+        });
+    clients_count.increment();
+    tokio::spawn(conn);
+}
+
 fn main() {
     let mut inner_doh = InnerDoH {
+        tls_cert_path: None,
+        tls_cert_password: None,
         listen_address: LISTEN_ADDRESS.parse().unwrap(),
         local_bind_address: LOCAL_BIND_ADDRESS.parse().unwrap(),
         server_address: SERVER_ADDRESS.parse().unwrap(),
@@ -266,27 +322,52 @@ fn main() {
         inner: Arc::new(inner_doh),
     };
     let listen_address = doh.inner.listen_address;
+
+    // openssl pkcs12 -export -out Cert.p12 -in cert.pem -inkey key.pem -passin pass:root -passout pass:root
+
+    let tls_acceptor = match (&doh.inner.tls_cert_path, &doh.inner.tls_cert_password) {
+        (Some(tls_cert_path), Some(tls_cert_password)) => {
+            Some(create_tls_acceptor(tls_cert_path, tls_cert_password).unwrap())
+        }
+        _ => None,
+    };
+
     let listener = TcpListener::bind(&listen_address).unwrap();
-    println!("Listening on http://{}{}", listen_address, path);
+
+    match tls_acceptor {
+        Some(_) => println!("Listening on https://{}{}", listen_address, path),
+        None => println!("Listening on http://{}{}", listen_address, path),
+    };
+
     let mut http = Http::new();
     http.keep_alive(false);
-    let server = listener.incoming().for_each(move |io| {
-        let service = doh.clone();
-        let clients_count = &doh.inner.clients_count;
-        let clients_count_inner = clients_count.clone();
-        let conn = http
-            .serve_connection(io, service)
-            .timeout(timeout)
-            .map_err(|_| {})
-            .then(move |fut| {
-                clients_count_inner.decrement();
-                fut
-            });
-        clients_count.increment();
-        tokio::spawn(conn);
-        Ok(())
-    });
-    tokio::run(server.map_err(|_| {}));
+
+    if let Some(tls_acceptor) = tls_acceptor {
+        let server = listener.incoming().for_each(move |io| {
+            let service = doh.clone();
+            let http = http.clone();
+            let clients_count = doh.inner.clients_count.clone();
+            tls_acceptor
+                .accept(io)
+                .timeout(timeout)
+                .then(move |stream| {
+                    if let Ok(stream) = stream {
+                        client_serve(clients_count, stream, http, service, timeout);
+                    }
+                    Ok(())
+                })
+        });
+        tokio::run(server.map_err(|_| {}));
+    } else {
+        let server = listener.incoming().for_each(move |stream| {
+            let service = doh.clone();
+            let http = http.clone();
+            let clients_count = doh.inner.clients_count.clone();
+            client_serve(clients_count, stream, http, service, timeout);
+            Ok(())
+        });
+        tokio::run(server.map_err(|_| {}));
+    };
 }
 
 fn parse_opts(inner_doh: &mut InnerDoH) {
@@ -369,6 +450,18 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .default_value(&err_ttl)
                 .help("TTL for errors, in seconds"),
         )
+        .arg(
+            Arg::with_name("tls_cert_path")
+                .long("tls-cert-path")
+                .takes_value(true)
+                .help("Path to a PKCS12-encoded identity"),
+        )
+        .arg(
+            Arg::with_name("tls_cert_password")
+                .long("tls-cert-password")
+                .takes_value(true)
+                .help("Password for the PKCS12-encoded identity"),
+        )
         .get_matches();
     inner_doh.listen_address = matches.value_of("listen_address").unwrap().parse().unwrap();
     inner_doh.server_address = matches.value_of("server_address").unwrap().parse().unwrap();
@@ -386,4 +479,8 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
     inner_doh.min_ttl = matches.value_of("min_ttl").unwrap().parse().unwrap();
     inner_doh.max_ttl = matches.value_of("max_ttl").unwrap().parse().unwrap();
     inner_doh.err_ttl = matches.value_of("err_ttl").unwrap().parse().unwrap();
+    inner_doh.tls_cert_path = matches.value_of("tls_cert_path").map(PathBuf::from);
+    inner_doh.tls_cert_password = matches
+        .value_of("tls_cert_password")
+        .map(ToString::to_string);
 }
