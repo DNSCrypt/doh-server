@@ -77,6 +77,7 @@ struct InnerDoH {
     min_ttl: u32,
     max_ttl: u32,
     err_ttl: u32,
+    keepalive: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -314,6 +315,7 @@ fn main() {
         min_ttl: MIN_TTL,
         max_ttl: MAX_TTL,
         err_ttl: ERR_TTL,
+        keepalive: true,
     };
     parse_opts(&mut inner_doh);
     let timeout = inner_doh.timeout;
@@ -340,7 +342,7 @@ fn main() {
     };
 
     let mut http = Http::new();
-    http.keep_alive(false);
+    http.keep_alive(doh.inner.keepalive);
 
     if let Some(tls_acceptor) = tls_acceptor {
         let server = listener.incoming().for_each(move |io| {
@@ -451,16 +453,24 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .help("TTL for errors, in seconds"),
         )
         .arg(
+            Arg::with_name("disable_keepalive")
+                .short("K")
+                .long("disable-keepalive")
+                .help("Disable keepalive"),
+        )
+        .arg(
             Arg::with_name("tls_cert_path")
+                .short("i")
                 .long("tls-cert-path")
                 .takes_value(true)
-                .help("Path to a PKCS12-encoded identity"),
+                .help("Path to a PKCS12-encoded identity (only required for built-in TLS)"),
         )
         .arg(
             Arg::with_name("tls_cert_password")
+                .short("I")
                 .long("tls-cert-password")
                 .takes_value(true)
-                .help("Password for the PKCS12-encoded identity"),
+                .help("Password for the PKCS12-encoded identity (only required for built-in TLS)"),
         )
         .get_matches();
     inner_doh.listen_address = matches.value_of("listen_address").unwrap().parse().unwrap();
@@ -479,6 +489,7 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
     inner_doh.min_ttl = matches.value_of("min_ttl").unwrap().parse().unwrap();
     inner_doh.max_ttl = matches.value_of("max_ttl").unwrap().parse().unwrap();
     inner_doh.err_ttl = matches.value_of("err_ttl").unwrap().parse().unwrap();
+    inner_doh.keepalive = !matches.is_present("disable_keepalive");
     inner_doh.tls_cert_path = matches.value_of("tls_cert_path").map(PathBuf::from);
     inner_doh.tls_cert_password = matches
         .value_of("tls_cert_password")
