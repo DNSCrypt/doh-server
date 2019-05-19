@@ -37,6 +37,8 @@ OPTIONS:
     -i, --tls-cert-path <tls_cert_path>              Path to a PKCS12-encoded identity (only required for built-in TLS)
 ```
 
+## HTTP/2 termination
+
 ## Clients
 
 `doh-proxy` can be used with [dnscrypt-proxy](https://github.com/jedisct1/dnscrypt-proxy)
