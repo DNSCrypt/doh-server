@@ -383,8 +383,6 @@ fn main() {
     let listen_address = doh.inner.listen_address;
     let listener = TcpListener::bind(&listen_address).unwrap();
 
-    // openssl pkcs12 -export -out Cert.p12 -in cert.pem -inkey key.pem -passin pass:root -passout pass:root
-
     #[cfg(feature = "tls")]
     let tls_acceptor = match (&doh.inner.tls_cert_path, &doh.inner.tls_cert_password) {
         (Some(tls_cert_path), Some(tls_cert_password)) => {
