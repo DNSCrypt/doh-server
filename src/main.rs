@@ -92,6 +92,7 @@ struct InnerDoH {
     max_ttl: u32,
     err_ttl: u32,
     keepalive: bool,
+    disable_post: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -158,6 +159,13 @@ impl DoH {
         }
         match *req.method() {
             Method::POST => {
+                if self.inner.disable_post {
+                    let response = Response::builder()
+                        .status(StatusCode::METHOD_NOT_ALLOWED)
+                        .body(Body::empty())
+                        .unwrap();
+                    return Box::new(future::ok(response));
+                }
                 let fut = self.read_body_and_proxy(req.into_body());
                 Box::new(fut.map_err(|_| Error::Incomplete))
             }
@@ -371,6 +379,7 @@ fn main() {
         max_ttl: MAX_TTL,
         err_ttl: ERR_TTL,
         keepalive: true,
+        disable_post: false,
     };
     parse_opts(&mut inner_doh);
     let timeout = inner_doh.timeout;
@@ -494,6 +503,12 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .short("K")
                 .long("disable-keepalive")
                 .help("Disable keepalive"),
+        )
+        .arg(
+            Arg::with_name("disable_post")
+                .short("P")
+                .long("disable-post")
+                .help("Disable POST queries"),
         );
 
     #[cfg(feature = "tls")]
@@ -531,6 +546,7 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
     inner_doh.max_ttl = matches.value_of("max_ttl").unwrap().parse().unwrap();
     inner_doh.err_ttl = matches.value_of("err_ttl").unwrap().parse().unwrap();
     inner_doh.keepalive = !matches.is_present("disable_keepalive");
+    inner_doh.disable_post = matches.is_present("disable_post");
 
     #[cfg(feature = "tls")]
     {

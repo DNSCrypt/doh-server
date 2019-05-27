@@ -26,6 +26,7 @@ USAGE:
 
 FLAGS:
     -K, --disable-keepalive    Disable keepalive
+    -P, --disable-post         Disable POST queries
     -h, --help                 Prints help information
     -V, --version              Prints version information
 
