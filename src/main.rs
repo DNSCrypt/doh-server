@@ -209,6 +209,13 @@ impl DoH {
         &self,
         mut query: Vec<u8>,
     ) -> Box<dyn Future<Item = Response<Body>, Error = ()> + Send> {
+        if query.len() < MIN_DNS_PACKET_LEN {
+            let response = Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::empty())
+                .unwrap();
+            return Box::new(future::ok(response));
+        }
         let _ = dns::set_edns_max_payload_size(&mut query, MAX_DNS_RESPONSE_LEN as u16);
         let inner = &self.inner;
         let socket = UdpSocket::bind(&inner.local_bind_address).unwrap();
@@ -265,13 +272,7 @@ impl DoH {
             .concat2()
             .map_err(move |_err| ())
             .map(move |chunk| chunk.to_vec())
-            .and_then(move |query| {
-                if query.len() < MIN_DNS_PACKET_LEN {
-                    return Box::new(future::err(()))
-                        as Box<dyn Future<Item = _, Error = _> + Send>;
-                }
-                inner.proxy(query)
-            });
+            .and_then(move |query| inner.proxy(query));
         Box::new(fut)
     }
 }
