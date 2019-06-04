@@ -13,6 +13,7 @@ use hyper;
 use hyper::server::conn::Http;
 use hyper::service::Service;
 use hyper::{Body, Method, Request, Response, StatusCode};
+use std::io;
 
 #[cfg(feature = "tls")]
 use native_tls::{self, Identity};
@@ -103,20 +104,41 @@ struct DoH {
 #[derive(Debug)]
 enum Error {
     Incomplete,
+    InvalidData,
     TooLarge,
+    UpstreamIssue,
     Hyper(hyper::Error),
+    Io(io::Error),
 }
+
 impl std::fmt::Display for Error {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         std::fmt::Debug::fmt(self, fmt)
     }
 }
+
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match *self {
             Error::Incomplete => "Incomplete",
-            Error::TooLarge => "TooLarge",
+            Error::InvalidData => "Invalid data",
+            Error::TooLarge => "Too large",
+            Error::UpstreamIssue => "Upstream error",
             Error::Hyper(_) => self.description(),
+            Error::Io(_) => self.description(),
+        }
+    }
+}
+
+impl From<Error> for StatusCode {
+    fn from(e: Error) -> StatusCode {
+        match e {
+            Error::Incomplete => StatusCode::UNPROCESSABLE_ENTITY,
+            Error::InvalidData => StatusCode::BAD_REQUEST,
+            Error::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Error::UpstreamIssue => StatusCode::BAD_GATEWAY,
+            Error::Hyper(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Error::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -157,6 +179,38 @@ impl DoH {
                 .unwrap();
             return Box::new(future::ok(response));
         }
+        let headers = req.headers();
+        let accept = match headers.get("accept") {
+            None => {
+                let response = Response::builder()
+                    .status(StatusCode::NOT_ACCEPTABLE)
+                    .body(Body::empty())
+                    .unwrap();
+                return Box::new(future::ok(response));
+            }
+            Some(accept) => accept.to_str(),
+        };
+        let accept = match accept {
+            Err(_) => {
+                let response = Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::empty())
+                    .unwrap();
+                return Box::new(future::ok(response));
+            }
+            Ok(accept) => accept.to_lowercase(),
+        };
+        let found = accept
+            .split(',')
+            .take(10)
+            .any(|part| part.trim() == "application/dns-message");
+        if !found {
+            let response = Response::builder()
+                .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+                .body(Body::empty())
+                .unwrap();
+            return Box::new(future::ok(response));
+        }
         match *req.method() {
             Method::POST => {
                 if self.inner.disable_post {
@@ -166,8 +220,14 @@ impl DoH {
                         .unwrap();
                     return Box::new(future::ok(response));
                 }
-                let fut = self.read_body_and_proxy(req.into_body());
-                Box::new(fut.map_err(|_| Error::Incomplete))
+                let fut = self.read_body_and_proxy(req.into_body()).or_else(|e| {
+                    let response = Response::builder()
+                        .status(StatusCode::from(e))
+                        .body(Body::empty())
+                        .unwrap();
+                    future::ok(response)
+                });
+                Box::new(fut)
             }
             Method::GET => {
                 let query = req.uri().query().unwrap_or("");
@@ -192,8 +252,14 @@ impl DoH {
                         return Box::new(future::ok(response));
                     }
                 };
-                let fut = self.proxy(question);
-                Box::new(fut.map_err(|_| Error::Incomplete))
+                let fut = self.proxy(question).or_else(|e| {
+                    let response = Response::builder()
+                        .status(StatusCode::from(e))
+                        .body(Body::empty())
+                        .unwrap();
+                    future::ok(response)
+                });
+                Box::new(fut)
             }
             _ => {
                 let response = Response::builder()
@@ -208,13 +274,9 @@ impl DoH {
     fn proxy(
         &self,
         mut query: Vec<u8>,
-    ) -> Box<dyn Future<Item = Response<Body>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Response<Body>, Error = Error> + Send> {
         if query.len() < MIN_DNS_PACKET_LEN {
-            let response = Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::empty())
-                .unwrap();
-            return Box::new(future::ok(response));
+            return Box::new(future::err(Error::Incomplete));
         }
         let _ = dns::set_edns_max_payload_size(&mut query, MAX_DNS_RESPONSE_LEN as u16);
         let inner = &self.inner;
@@ -223,18 +285,18 @@ impl DoH {
         let (min_ttl, max_ttl, err_ttl) = (inner.min_ttl, inner.max_ttl, inner.err_ttl);
         let fut = socket
             .send_dgram(query, &inner.server_address)
-            .map_err(|_| ())
+            .map_err(Error::Io)
             .and_then(move |(socket, _)| {
                 let packet = vec![0; MAX_DNS_RESPONSE_LEN];
-                socket.recv_dgram(packet).map_err(|_| {})
+                socket.recv_dgram(packet).map_err(Error::Io)
             })
             .and_then(move |(_socket, mut packet, len, response_server_address)| {
                 if len < MIN_DNS_PACKET_LEN || expected_server_address != response_server_address {
-                    return future::err(());
+                    return future::err(Error::UpstreamIssue);
                 }
                 packet.truncate(len);
                 let ttl = match dns::min_ttl(&packet, min_ttl, max_ttl, err_ttl) {
-                    Err(_) => return future::err(()),
+                    Err(_) => return future::err(Error::UpstreamIssue),
                     Ok(ttl) => ttl,
                 };
                 let packet_len = packet.len();
@@ -256,7 +318,7 @@ impl DoH {
     fn read_body_and_proxy(
         &self,
         body: Body,
-    ) -> Box<dyn Future<Item = Response<Body>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Response<Body>, Error = Error> + Send> {
         let mut sum_size = 0;
         let inner = self.clone();
         let fut = body
@@ -270,7 +332,6 @@ impl DoH {
                 }
             })
             .concat2()
-            .map_err(move |_err| ())
             .map(move |chunk| chunk.to_vec())
             .and_then(move |query| inner.proxy(query));
         Box::new(fut)
