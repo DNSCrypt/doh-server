@@ -180,7 +180,7 @@ impl DoH {
             return Box::new(future::ok(response));
         }
         let headers = req.headers();
-        let accept = match headers.get("accept") {
+        let content_type = match headers.get(hyper::header::CONTENT_TYPE) {
             None => {
                 let response = Response::builder()
                     .status(StatusCode::NOT_ACCEPTABLE)
@@ -188,9 +188,9 @@ impl DoH {
                     .unwrap();
                 return Box::new(future::ok(response));
             }
-            Some(accept) => accept.to_str(),
+            Some(content_type) => content_type.to_str(),
         };
-        let accept = match accept {
+        let content_type = match content_type {
             Err(_) => {
                 let response = Response::builder()
                     .status(StatusCode::BAD_REQUEST)
@@ -198,13 +198,9 @@ impl DoH {
                     .unwrap();
                 return Box::new(future::ok(response));
             }
-            Ok(accept) => accept.to_lowercase(),
+            Ok(content_type) => content_type.to_lowercase(),
         };
-        let found = accept
-            .split(',')
-            .take(10)
-            .any(|part| part.trim() == "application/dns-message");
-        if !found {
+        if content_type != "application/dns-message" {
             let response = Response::builder()
                 .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
                 .body(Body::empty())
