@@ -167,6 +167,38 @@ impl Service for DoH {
 }
 
 impl DoH {
+    fn check_content_type(req: &Request<Body>) -> Result<(), Response<Body>> {
+        let headers = req.headers();
+        let content_type = match headers.get(hyper::header::CONTENT_TYPE) {
+            None => {
+                let response = Response::builder()
+                    .status(StatusCode::NOT_ACCEPTABLE)
+                    .body(Body::empty())
+                    .unwrap();
+                return Err(response);
+            }
+            Some(content_type) => content_type.to_str(),
+        };
+        let content_type = match content_type {
+            Err(_) => {
+                let response = Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::empty())
+                    .unwrap();
+                return Err(response);
+            }
+            Ok(content_type) => content_type.to_lowercase(),
+        };
+        if content_type != "application/dns-message" {
+            let response = Response::builder()
+                .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+                .body(Body::empty())
+                .unwrap();
+            return Err(response);
+        }
+        Ok(())
+    }
+
     fn handle_client(
         &self,
         req: Request<Body>,
@@ -179,34 +211,6 @@ impl DoH {
                 .unwrap();
             return Box::new(future::ok(response));
         }
-        let headers = req.headers();
-        let content_type = match headers.get(hyper::header::CONTENT_TYPE) {
-            None => {
-                let response = Response::builder()
-                    .status(StatusCode::NOT_ACCEPTABLE)
-                    .body(Body::empty())
-                    .unwrap();
-                return Box::new(future::ok(response));
-            }
-            Some(content_type) => content_type.to_str(),
-        };
-        let content_type = match content_type {
-            Err(_) => {
-                let response = Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::empty())
-                    .unwrap();
-                return Box::new(future::ok(response));
-            }
-            Ok(content_type) => content_type.to_lowercase(),
-        };
-        if content_type != "application/dns-message" {
-            let response = Response::builder()
-                .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
-                .body(Body::empty())
-                .unwrap();
-            return Box::new(future::ok(response));
-        }
         match *req.method() {
             Method::POST => {
                 if self.inner.disable_post {
@@ -214,6 +218,9 @@ impl DoH {
                         .status(StatusCode::METHOD_NOT_ALLOWED)
                         .body(Body::empty())
                         .unwrap();
+                    return Box::new(future::ok(response));
+                }
+                if let Err(response) = Self::check_content_type(&req) {
                     return Box::new(future::ok(response));
                 }
                 let fut = self.read_body_and_proxy(req.into_body()).or_else(|e| {
