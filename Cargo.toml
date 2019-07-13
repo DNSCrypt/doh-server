@@ -16,7 +16,7 @@ tls = ["native-tls", "tokio-tls"]
 
 [dependencies]
 base64 = "0.10"
-clap = "2"
+clap = "2.33.0"
 futures = "0.1.27"
 hyper = "0.12.30"
 jemallocator = "0"
