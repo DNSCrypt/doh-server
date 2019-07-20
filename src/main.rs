@@ -23,7 +23,7 @@ use native_tls::{self, Identity};
 use std::fs::File;
 
 #[cfg(feature = "tls")]
-use std::io::{self, Read};
+use std::io::Read;
 
 #[cfg(feature = "tls")]
 use std::path::{Path, PathBuf};
