@@ -1,11 +1,14 @@
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+#[macro_use]
+extern crate clap;
+
 mod dns;
 mod utils;
 
 use base64;
-use clap::{App, Arg};
+use clap::Arg;
 use futures::future;
 use futures::prelude::*;
 use futures::stream::Stream;
@@ -101,6 +104,7 @@ struct DoH {
     inner: Arc<InnerDoH>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum Error {
     Incomplete,
@@ -489,8 +493,8 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
     let max_ttl = MAX_TTL.to_string();
     let err_ttl = ERR_TTL.to_string();
 
-    let options = App::new("doh-proxy")
-        .about("A DNS-over-HTTP server proxy")
+    let _ = include_str!("../Cargo.toml");
+    let options = app_from_crate!()
         .arg(
             Arg::with_name("listen_address")
                 .short("l")
