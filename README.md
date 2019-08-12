@@ -4,16 +4,28 @@ A DNS-over-HTTP server proxy in Rust. Add a webserver and you get DNS-over-HTTPS
 
 ## Installation
 
+Install Rust by an official recommended way:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
 Without built-in support for HTTPS:
 
 ```sh
-cargo install doh-proxy
+cargo install --force --root '/usr/local/doh/' --git 'https://github.com/jedisct1/rust-doh.git'
 ```
 
 With built-in support for HTTPS (requires openssl-dev):
 
 ```sh
-cargo install doh-proxy --features=tls
+cargo install --force --root '/usr/local/doh/' --git 'https://github.com/jedisct1/rust-doh.git' --features=tls
+```
+
+Be sure to add `/usr/local/doh/bin` to your `$PATH` to be able to run the installed binaries:
+
+```sh
+export PATH=$PATH:/usr/local/doh/bin
 ```
 
 ## Usage
