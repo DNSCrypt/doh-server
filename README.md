@@ -70,6 +70,30 @@ In order to enable built-in HTTPS support, add the `--tls-cert-path` option to s
 
 Once HTTPS is enabled, HTTP connections will not be accepted.
 
+## Operational recommendations
+
+* DoH can easily be detected and blocked using SNI inspection. As a mitigation, DoH endpoints should preferably share the same virtual host as existing, popular websites, rather than being on dedicated virtual hosts.
+* When using DoH, DNS stamps should include a resolver IP address in order to remove a dependency on non-encrypted, non-authenticated, easy-to-block resolvers.
+* Unlike DNSCrypt where users must explicitly trust a DNS server public key, the security of DoH relies on traditional public Certificate Authorities. Additional root certificates (required by governments, security software, enterprise gateways) installed on a client immediately make DoH vulnerable to MITM. In order to prevent this, DNS stamps should include the hash of the parent certificate.
+* TLS certificates are tied to host names. But domains expire, get reassigned and switch hands all the time. If a domain originally used for a DoH service gets a new, possibly malicious owner, clients still configured to use the service will blindly keep trusting it if the CA is the same. As a mitigation, the CA should sign an intermediate certificate (the only one present in the stamp), itself used to sign the name used by the DoH server. While commercial CAs offer this, Let's Encrypt currently doesn't.
+* Make sure that the front-end supports HTTP/2 and TLS 1.3.
+
+## Example usage with Nginx
+
+In an existing `server`, a `/doh` endpoint can be exposed that way:
+
+```text
+location /doh {
+  proxy_pass http://127.0.0.1:3000;
+}
+```
+
+This example assumes that the DoH proxy is listening locally to port `3000`.
+
+HTTP caching can be added (see the `proxy_cache_path` and `proxy_cache` directives in the Nginx documentation), but be aware that a DoH server will quickly create a gigantic amount of files.
+
+Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server, and the `dnscrypt-proxy -show-certs` command to print the TLS certificate signatures to be added it.
+
 ## Clients
 
 `doh-proxy` can be used with [dnscrypt-proxy](https://github.com/jedisct1/dnscrypt-proxy)
@@ -77,4 +101,4 @@ as a client.
 
 `doh-proxy` is currently being used by the `doh.crypto.sx` public DNS resolver.
 
-Other public DoH servers can be found here: [public encrypted DNS servers](https://dnscrypt.info/public-servers).
+An extensive list of public DoH servers can be found here: [public encrypted DNS servers](https://dnscrypt.info/public-servers).

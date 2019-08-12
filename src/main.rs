@@ -17,6 +17,7 @@ use hyper::server::conn::Http;
 use hyper::service::Service;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use std::io;
+use std::net::{SocketAddr, ToSocketAddrs};
 
 #[cfg(feature = "tls")]
 use native_tls::{self, Identity};
@@ -25,8 +26,7 @@ use native_tls::{self, Identity};
 use std::fs::File;
 
 #[cfg(feature = "tls")]
-use std::io::{self, Read};
-use std::net::SocketAddr;
+use std::io::Read;
 
 #[cfg(feature = "tls")]
 use std::path::{Path, PathBuf};
@@ -487,6 +487,8 @@ fn main() {
 }
 
 fn parse_opts(inner_doh: &mut InnerDoH) {
+    use crate::utils::{verify_remote_server, verify_sock_addr};
+
     let max_clients = MAX_CLIENTS.to_string();
     let timeout_sec = TIMEOUT_SEC.to_string();
     let min_ttl = MIN_TTL.to_string();
@@ -501,6 +503,7 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .long("listen-address")
                 .takes_value(true)
                 .default_value(LISTEN_ADDRESS)
+                .validator(verify_sock_addr)
                 .help("Address to listen to"),
         )
         .arg(
@@ -509,6 +512,7 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .long("server-address")
                 .takes_value(true)
                 .default_value(SERVER_ADDRESS)
+                .validator(verify_remote_server)
                 .help("Address to connect to"),
         )
         .arg(
@@ -517,6 +521,7 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .long("local-bind-address")
                 .takes_value(true)
                 .default_value(LOCAL_BIND_ADDRESS)
+                .validator(verify_sock_addr)
                 .help("Address to connect from"),
         )
         .arg(
@@ -599,7 +604,14 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
 
     let matches = options.get_matches();
     inner_doh.listen_address = matches.value_of("listen_address").unwrap().parse().unwrap();
-    inner_doh.server_address = matches.value_of("server_address").unwrap().parse().unwrap();
+
+    inner_doh.server_address = matches
+        .value_of("server_address")
+        .unwrap()
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .unwrap();
     inner_doh.local_bind_address = matches
         .value_of("local_bind_address")
         .unwrap()
