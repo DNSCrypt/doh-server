@@ -92,7 +92,7 @@ This example assumes that the DoH proxy is listening locally to port `3000`.
 
 HTTP caching can be added (see the `proxy_cache_path` and `proxy_cache` directives in the Nginx documentation), but be aware that a DoH server will quickly create a gigantic amount of files.
 
-Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server, and the `dnscrypt-proxy -show-certs` command to print the TLS certificate signatures to be added it.
+Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server, and the `dnscrypt-proxy -show-certs` command to print the TLS certificate hashes to be added it.
 
 ## Clients
 
