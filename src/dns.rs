@@ -32,7 +32,7 @@ pub fn rcode(packet: &[u8]) -> u8 {
     packet[3] & 0x0f
 }
 
-pub fn is_temporary_error(packet: &[u8]) -> bool {
+pub fn is_recoverable_error(packet: &[u8]) -> bool {
     let rcode = rcode(packet);
     rcode == DNS_RCODE_SERVFAIL || rcode == DNS_RCODE_REFUSED
 }
