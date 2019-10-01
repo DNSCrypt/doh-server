@@ -4,6 +4,9 @@ const DNS_MAX_PACKET_SIZE: usize = 65_535;
 const DNS_OFFSET_QUESTION: usize = DNS_HEADER_SIZE;
 const DNS_TYPE_OPT: u16 = 41;
 
+const DNS_RCODE_SERVFAIL: u8 = 2;
+const DNS_RCODE_REFUSED: u8 = 5;
+
 #[inline]
 fn qdcount(packet: &[u8]) -> u16 {
     (u16::from(packet[4]) << 8) | u16::from(packet[5])
@@ -22,6 +25,16 @@ fn nscount(packet: &[u8]) -> u16 {
 #[inline]
 fn arcount(packet: &[u8]) -> u16 {
     (u16::from(packet[10]) << 8) | u16::from(packet[11])
+}
+
+#[inline]
+pub fn rcode(packet: &[u8]) -> u8 {
+    packet[3] & 0x0f
+}
+
+pub fn is_temporary_error(packet: &[u8]) -> bool {
+    let rcode = rcode(packet);
+    rcode == DNS_RCODE_SERVFAIL || rcode == DNS_RCODE_REFUSED
 }
 
 fn arcount_inc(packet: &mut [u8]) -> Result<(), &'static str> {

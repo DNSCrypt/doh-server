@@ -302,9 +302,13 @@ impl DoH {
                     return future::err(Error::UpstreamIssue);
                 }
                 packet.truncate(len);
-                let ttl = match dns::min_ttl(&packet, min_ttl, max_ttl, err_ttl) {
-                    Err(_) => return future::err(Error::UpstreamIssue),
-                    Ok(ttl) => ttl,
+                let ttl = if dns::is_temporary_error(&packet) {
+                    err_ttl
+                } else {
+                    match dns::min_ttl(&packet, min_ttl, max_ttl, err_ttl) {
+                        Err(_) => return future::err(Error::UpstreamIssue),
+                        Ok(ttl) => ttl,
+                    }
                 };
                 let packet_len = packet.len();
                 let response = Response::builder()
