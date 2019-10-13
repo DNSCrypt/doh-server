@@ -70,11 +70,23 @@ In order to enable built-in HTTPS support, add the `--tls-cert-path` option to s
 
 Once HTTPS is enabled, HTTP connections will not be accepted.
 
+## Accepting both DNSCrypt and DoH connections on port 443
+
+DNSCrypt is an alternative encrypted DNS protocol that is faster and more lightweight than DoH.
+
+Both DNSCrypt and DoH connections can be accepted on the same TCP port using [Encrypted DNS Server](https://github.com/jedisct1/encrypted-dns-server).
+
+Encrypted DNS Server forwards DoH queries to Nginx or `rust-doh` when a TLS connection is detected, or directly responds to DNSCrypt queries.
+
+It also provides caching, metrics, and TCP connection reuse in order to mitigate exhaustion attacks.
+
+Unless the front-end is a CDN, an ideal setup is to use `rust-doh` behind `Encrypted DNS Server`.
+
 ## Operational recommendations
 
-* DoH can easily be detected and blocked using SNI inspection. As a mitigation, DoH endpoints should preferably share the same virtual host as existing, popular websites, rather than being on dedicated virtual hosts.
+* DoH can be easily detected and blocked using SNI inspection. As a mitigation, DoH endpoints should preferably share the same virtual host as existing, popular websites, rather than being on dedicated virtual hosts.
 * When using DoH, DNS stamps should include a resolver IP address in order to remove a dependency on non-encrypted, non-authenticated, easy-to-block resolvers.
-* Unlike DNSCrypt where users must explicitly trust a DNS server public key, the security of DoH relies on traditional public Certificate Authorities. Additional root certificates (required by governments, security software, enterprise gateways) installed on a client immediately make DoH vulnerable to MITM. In order to prevent this, DNS stamps should include the hash of the parent certificate.
+* Unlike DNSCrypt where users must explicitly trust a DNS server's public key, the security of DoH relies on traditional public Certificate Authorities. Additional root certificates (required by governments, security software, enterprise gateways) installed on a client immediately make DoH vulnerable to MITM. In order to prevent this, DNS stamps should include the hash of the parent certificate.
 * TLS certificates are tied to host names. But domains expire, get reassigned and switch hands all the time. If a domain originally used for a DoH service gets a new, possibly malicious owner, clients still configured to use the service will blindly keep trusting it if the CA is the same. As a mitigation, the CA should sign an intermediate certificate (the only one present in the stamp), itself used to sign the name used by the DoH server. While commercial CAs offer this, Let's Encrypt currently doesn't.
 * Make sure that the front-end supports HTTP/2 and TLS 1.3.
 
@@ -92,7 +104,7 @@ This example assumes that the DoH proxy is listening locally to port `3000`.
 
 HTTP caching can be added (see the `proxy_cache_path` and `proxy_cache` directives in the Nginx documentation), but be aware that a DoH server will quickly create a gigantic amount of files.
 
-Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server, and the `dnscrypt-proxy -show-certs` command to print the TLS certificate hashes to be added it.
+Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server, and the `dnscrypt-proxy -show-certs` command to print the TLS certificate signatures to be added it.
 
 ## Clients
 
