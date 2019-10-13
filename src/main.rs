@@ -17,7 +17,7 @@ use hyper::server::conn::Http;
 use hyper::service::Service;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use std::io;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 
 #[cfg(feature = "tls")]
 use native_tls::{self, Identity};
@@ -43,7 +43,6 @@ use tokio_tls::TlsAcceptor;
 const BLOCK_SIZE: usize = 128;
 const DNS_QUERY_PARAM: &str = "dns";
 const LISTEN_ADDRESS: &str = "127.0.0.1:3000";
-const LOCAL_BIND_ADDRESS: &str = "0.0.0.0:0";
 const MAX_CLIENTS: usize = 512;
 const MAX_DNS_QUESTION_LEN: usize = 512;
 const MAX_DNS_RESPONSE_LEN: usize = 4096;
@@ -442,7 +441,7 @@ fn main() {
         tls_cert_password: None,
 
         listen_address: LISTEN_ADDRESS.parse().unwrap(),
-        local_bind_address: LOCAL_BIND_ADDRESS.parse().unwrap(),
+        local_bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
         server_address: SERVER_ADDRESS.parse().unwrap(),
         path: PATH.to_string(),
         max_clients: MAX_CLIENTS,
@@ -524,7 +523,6 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
                 .short("b")
                 .long("local-bind-address")
                 .takes_value(true)
-                .default_value(LOCAL_BIND_ADDRESS)
                 .validator(verify_sock_addr)
                 .help("Address to connect from"),
         )
@@ -616,11 +614,18 @@ fn parse_opts(inner_doh: &mut InnerDoH) {
         .unwrap()
         .next()
         .unwrap();
-    inner_doh.local_bind_address = matches
-        .value_of("local_bind_address")
-        .unwrap()
-        .parse()
-        .unwrap();
+    inner_doh.local_bind_address = match matches.value_of("local_bind_address") {
+        Some(address) => address.parse().unwrap(),
+        None => match inner_doh.server_address {
+            SocketAddr::V4(_) => SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)),
+            SocketAddr::V6(s) => SocketAddr::V6(SocketAddrV6::new(
+                Ipv6Addr::UNSPECIFIED,
+                0,
+                s.flowinfo(),
+                s.scope_id(),
+            )),
+        },
+    };
     inner_doh.path = matches.value_of("path").unwrap().to_string();
     if !inner_doh.path.starts_with('/') {
         inner_doh.path = format!("/{}", inner_doh.path);
