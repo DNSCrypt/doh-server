@@ -78,7 +78,7 @@ Both DNSCrypt and DoH connections can be accepted on the same TCP port using [En
 
 Encrypted DNS Server forwards DoH queries to Nginx or `rust-doh` when a TLS connection is detected, or directly responds to DNSCrypt queries.
 
-It also provides caching, metrics, and TCP connection reuse in order to mitigate exhaustion attacks.
+It also provides DNS caching, server-side filtering, metrics, and TCP connection reuse in order to mitigate exhaustion attacks.
 
 Unless the front-end is a CDN, an ideal setup is to use `rust-doh` behind `Encrypted DNS Server`.
 
