@@ -19,7 +19,7 @@ jobs:
         run: cargo install --debug cargo-deb
       - name: Build
         run: |
-          env RUSTFLAGS="-C link-arg=-s" cargo build --release
+          env RUSTFLAGS="-C link-arg=-s" cargo build --release --features=tls
           mkdir doh-proxy
           mv target/release/doh-proxy doh-proxy/
           cp README.md doh-proxy/
