@@ -4,6 +4,15 @@ A fast and secure DoH (DNS-over-HTTPS) server written in Rust.
 
 ## Installation
 
+### Precompiled packages
+
+- [Linux x86_64 (tar)](https://github.com/jedisct1/rust-doh/suites/316239337/artifacts/355547)
+- [Linux x86_64 (debian package)](https://github.com/jedisct1/rust-doh/suites/316239337/artifacts/355548)
+
+### From source code
+
+This requires the `rust` compiler to be installed.
+
 Without built-in support for HTTPS:
 
 ```sh
@@ -69,6 +78,8 @@ Once done, check that the permissions on `cert.p12` are reasonable.
 In order to enable built-in HTTPS support, add the `--tls-cert-path` option to specify the location of the `cert.p12` file, as well as the password using `--tls-cert-password`.
 
 Once HTTPS is enabled, HTTP connections will not be accepted.
+
+A sample self-signed certificate [`localhost.p12`](localhost.p12) can be used for testing.
 
 ## Accepting both DNSCrypt and DoH connections on port 443
 
