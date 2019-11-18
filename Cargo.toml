@@ -41,6 +41,6 @@ priority = "optional"
 [profile.release]
 codegen-units = 1
 incremental = false
-lto = true
+lto = "fat"
 opt-level = 3
 panic = "abort"
