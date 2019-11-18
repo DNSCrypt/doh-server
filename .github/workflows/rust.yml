@@ -1,0 +1,37 @@
+name: Rust
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@master
+      - uses: hecrj/setup-rust-action@master
+        with:
+          rust-version: nightly
+      - name: Check Cargo availability
+        run: cargo --version
+      - name: Check Rustup default toolchain
+        run: rustup default | grep nightly
+      - name: Install cargo-deb
+        run: cargo install --debug cargo-deb
+      - name: Build
+        run: |
+          echo 'lto = "fat"' >> Cargo.toml
+          env RUSTFLAGS="-C link-arg=-s" cargo build --release
+          mkdir doh-proxy
+          mv target/release/doh-proxy doh-proxy/
+          cp README.md doh-proxy/
+      - name: Debian package
+        run: |
+          cargo deb
+      - uses: actions/upload-artifact@master
+        with:
+          name: doh-proxy-linux-x86_64
+          path: doh-proxy
+      - uses: actions/upload-artifact@master
+        with:
+          name: debian
+          path: target/debian

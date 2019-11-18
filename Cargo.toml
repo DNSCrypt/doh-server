@@ -9,6 +9,7 @@ homepage = "https://github.com/jedisct1/rust-doh"
 repository = "https://github.com/jedisct1/rust-doh"
 categories = ["asynchronous", "network-programming","command-line-utilities"]
 edition = "2018"
+readme = "README.md"
 
 [features]
 default = []
@@ -26,7 +27,20 @@ tokio-current-thread = "0.1.6"
 tokio-timer = "0.2.11"
 tokio-tls = { version = "0.2.1", optional = true }
 
+[package.metadata.deb]
+extended-description = """\
+A fast and secure DoH (DNS-over-HTTPS) server written in Rust."""
+assets = [
+  ["target/release/doh-proxy", "usr/bin/", "755"],
+  ["README.md", "usr/share/doc/doh-proxy/README.md", "644"]
+]
+section = "network"
+depends = "$auto"
+priority = "optional"
+
 [profile.release]
+codegen-units = 1
+incremental = false
 lto = true
-panic = "abort"
 opt-level = 3
+panic = "abort"
