@@ -25,7 +25,7 @@ native-tls = { version = "0.2.3", optional = true }
 tokio = "0.1.22"
 tokio-current-thread = "0.1.6"
 tokio-timer = "0.2.11"
-tokio-tls = { version = "0.2.1", optional = true }
+tokio-tls = { version = "0.3.0", optional = true }
 
 [package.metadata.deb]
 extended-description = """\
