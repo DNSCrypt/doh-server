@@ -16,14 +16,15 @@ default = []
 tls = ["native-tls", "tokio-tls"]
 
 [dependencies]
+anyhow = "1.0"
 base64 = "0.11"
 clap = "2.33.0"
-futures = "0.1.29"
-hyper = "0.12.35"
+futures = "0.3"
+hyper = "0.13"
 jemallocator = "0"
 native-tls = { version = "0.2.3", optional = true }
-tokio = "0.1.22"
-tokio-tls = { version = "0.2.1", optional = true }
+tokio = { version = "0.2", features = ["full"] }
+tokio-tls = { version = "0.3", optional = true }
 
 [package.metadata.deb]
 extended-description = """\
