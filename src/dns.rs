@@ -63,6 +63,7 @@ fn skip_name(packet: &[u8], offset: usize) -> Result<usize, Error> {
             }
             label_len => label_len,
         } as usize;
+        ensure!(label_len < 0x40, "Long label");
         ensure!(
             packet_len - offset - 1 > label_len,
             "Malformed packet with an out-of-bounds name"
