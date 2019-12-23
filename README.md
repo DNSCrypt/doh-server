@@ -80,6 +80,7 @@ In order to enable built-in HTTPS support, add the `--tls-cert-path` option to s
 Once HTTPS is enabled, HTTP connections will not be accepted.
 
 A sample self-signed certificate [`localhost.p12`](https://github.com/jedisct1/rust-doh/raw/master/localhost.p12) can be used for testing.
+The password is `test`.
 
 ## Accepting both DNSCrypt and DoH connections on port 443
 
