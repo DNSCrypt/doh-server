@@ -159,7 +159,7 @@ impl DoH {
         if query.len() < MIN_DNS_PACKET_LEN {
             return Err(DoHError::Incomplete);
         }
-        let _ = dns::set_edns_max_payload_size(&mut query, MAX_DNS_RESPONSE_LEN as u16);
+        let _ = dns::set_edns_max_payload_size(&mut query, MAX_DNS_RESPONSE_LEN as _);
         let globals = &self.globals;
         let mut socket = UdpSocket::bind(&globals.local_bind_address)
             .await
@@ -185,11 +185,11 @@ impl DoH {
                 Ok(ttl) => ttl,
             }
         };
+        dns::add_edns_padding(&mut packet, BLOCK_SIZE).map_err(|_| DoHError::TooLarge)?;
         let packet_len = packet.len();
         let response = Response::builder()
             .header(hyper::header::CONTENT_LENGTH, packet_len)
             .header(hyper::header::CONTENT_TYPE, "application/dns-message")
-            .header("X-Padding", utils::padding_string(packet_len, BLOCK_SIZE))
             .header(
                 hyper::header::CACHE_CONTROL,
                 format!("max-age={}", ttl).as_str(),

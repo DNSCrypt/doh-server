@@ -3,9 +3,11 @@ use byteorder::{BigEndian, ByteOrder};
 
 const DNS_HEADER_SIZE: usize = 12;
 const DNS_MAX_HOSTNAME_SIZE: usize = 256;
-const DNS_MAX_PACKET_SIZE: usize = 65_535;
+const DNS_MAX_PACKET_SIZE: usize = 4096;
 const DNS_OFFSET_QUESTION: usize = DNS_HEADER_SIZE;
 const DNS_TYPE_OPT: u16 = 41;
+
+const DNS_PTYPE_PADDING: u16 = 12;
 
 const DNS_RCODE_SERVFAIL: u8 = 2;
 const DNS_RCODE_REFUSED: u8 = 5;
@@ -199,5 +201,60 @@ pub fn set_edns_max_payload_size(packet: &mut Vec<u8>, max_payload_size: u16) ->
         return Ok(());
     }
     add_edns_section(packet, max_payload_size)?;
+    Ok(())
+}
+
+pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), Error> {
+    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
+    let mut packet_len = packet.len();
+    ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
+    ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
+
+    let mut offset = skip_name(packet, DNS_OFFSET_QUESTION)?;
+    assert!(offset > DNS_OFFSET_QUESTION);
+    ensure!(packet_len - offset >= 4, "Short packet");
+    offset += 4;
+    let (ancount, nscount, arcount) = (ancount(packet), nscount(packet), arcount(packet));
+    offset = traverse_rrs(packet, offset, ancount + nscount, |_offset| Ok(()))?;
+    let mut edns_offset = None;
+    traverse_rrs_mut(packet, offset, arcount, |packet, offset| {
+        let qtype = BigEndian::read_u16(&packet[offset..]);
+        if qtype == DNS_TYPE_OPT {
+            ensure!(edns_offset.is_none(), "Duplicate OPT RR found");
+            edns_offset = Some(offset)
+        }
+        Ok(())
+    })?;
+    let edns_offset = match edns_offset {
+        Some(edns_offset) => edns_offset,
+        None => {
+            let edns_offset = packet.len() + 1;
+            add_edns_section(packet, DNS_MAX_PACKET_SIZE as _)?;
+            packet_len = packet.len();
+            edns_offset
+        }
+    };
+    ensure!(packet_len < DNS_MAX_PACKET_SIZE, "Large packet");
+    let pad_len = (block_size - 1) - ((packet_len + (block_size - 1)) & (block_size - 1));
+    let mut edns_padding_prr = vec![0u8; 2 + pad_len];
+    edns_padding_prr[0] = (DNS_PTYPE_PADDING >> 8) as u8;
+    edns_padding_prr[1] = DNS_PTYPE_PADDING as u8;
+    let edns_padding_prr_len = edns_padding_prr.len();
+    let edns_rdlen_offset: usize = edns_offset + 8;
+    ensure!(packet_len - edns_rdlen_offset >= 2, "Short packet");
+    let edns_rdlen = BigEndian::read_u16(&packet[edns_rdlen_offset..]);
+    ensure!(
+        0xffff - edns_rdlen as usize >= edns_padding_prr_len,
+        "EDNS section too large for padding"
+    );
+    BigEndian::write_u16(
+        &mut packet[edns_rdlen_offset..],
+        edns_rdlen + edns_padding_prr_len as u16,
+    );
+    ensure!(
+        DNS_MAX_PACKET_SIZE - packet_len >= edns_padding_prr_len,
+        "Large packet"
+    );
+    packet.extend(&edns_padding_prr);
     Ok(())
 }
