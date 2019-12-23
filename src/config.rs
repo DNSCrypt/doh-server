@@ -1,7 +1,12 @@
+use crate::constants::*;
+use crate::globals::*;
+
+use clap::Arg;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
+use std::time::Duration;
+
 #[cfg(feature = "tls")]
 use std::path::PathBuf;
-
-use super::*;
 
 pub fn parse_opts(globals: &mut Globals) {
     use crate::utils::{verify_remote_server, verify_sock_addr};

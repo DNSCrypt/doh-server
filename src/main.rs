@@ -9,6 +9,8 @@ mod constants;
 mod dns;
 mod errors;
 mod globals;
+#[cfg(feature = "tls")]
+mod tls;
 mod utils;
 
 use crate::config::*;
@@ -16,62 +18,25 @@ use crate::constants::*;
 use crate::errors::*;
 use crate::globals::*;
 
-use clap::Arg;
+#[cfg(feature = "tls")]
+use crate::tls::*;
+
 use futures::future;
 use futures::prelude::*;
 use futures::task::{Context, Poll};
 use hyper::http;
 use hyper::server::conn::Http;
 use hyper::{Body, Method, Request, Response, StatusCode};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, UdpSocket};
 
-#[cfg(feature = "tls")]
-use native_tls::{self, Identity};
-#[cfg(feature = "tls")]
-use std::fs::File;
-#[cfg(feature = "tls")]
-use std::io;
-#[cfg(feature = "tls")]
-use std::io::Read;
-#[cfg(feature = "tls")]
-use std::path::Path;
-#[cfg(feature = "tls")]
-use tokio_tls::TlsAcceptor;
-
 #[derive(Clone, Debug)]
-struct DoH {
-    globals: Arc<Globals>,
-}
-
-#[cfg(feature = "tls")]
-fn create_tls_acceptor<P>(path: P, password: &str) -> io::Result<TlsAcceptor>
-where
-    P: AsRef<Path>,
-{
-    let identity_bin = {
-        let mut fp = File::open(path)?;
-        let mut identity_bin = vec![];
-        fp.read_to_end(&mut identity_bin)?;
-        identity_bin
-    };
-    let identity = Identity::from_pkcs12(&identity_bin, password).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Unusable PKCS12-encoded identity. The encoding and/or the password may be wrong",
-        )
-    })?;
-    let native_acceptor = native_tls::TlsAcceptor::new(identity).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Unable to use the provided PKCS12-encoded identity",
-        )
-    })?;
-    Ok(TlsAcceptor::from(native_acceptor))
+pub struct DoH {
+    pub globals: Arc<Globals>,
 }
 
 impl hyper::service::Service<http::Request<Body>> for DoH {
@@ -268,7 +233,11 @@ impl DoH {
         });
     }
 
-    async fn start_without_tls(self, mut listener: TcpListener, server: Http) -> Result<(), Error> {
+    async fn start_without_tls(
+        self,
+        mut listener: TcpListener,
+        server: Http,
+    ) -> Result<(), DoHError> {
         let listener_service = async {
             while let Some(stream) = listener.incoming().next().await {
                 let stream = match stream {
@@ -277,40 +246,17 @@ impl DoH {
                 };
                 self.clone().client_serve(stream, server.clone()).await;
             }
-            Ok(()) as Result<(), Error>
+            Ok(()) as Result<(), DoHError>
         };
         listener_service.await?;
         Ok(())
     }
 
-    #[cfg(feature = "tls")]
-    async fn start_with_tls(
-        self,
-        tls_acceptor: TlsAcceptor,
-        mut listener: TcpListener,
-        server: Http,
-    ) -> Result<(), Error> {
-        let listener_service = async {
-            while let Some(raw_stream) = listener.incoming().next().await {
-                let raw_stream = match raw_stream {
-                    Ok(raw_stream) => raw_stream,
-                    Err(_) => continue,
-                };
-                let stream = match tls_acceptor.accept(raw_stream).await {
-                    Ok(stream) => stream,
-                    Err(_) => continue,
-                };
-                self.clone().client_serve(stream, server.clone()).await;
-            }
-            Ok(()) as Result<(), Error>
-        };
-        listener_service.await?;
-        Ok(())
-    }
-
-    async fn entrypoint(self) -> Result<(), Error> {
+    async fn entrypoint(self) -> Result<(), DoHError> {
         let listen_address = self.globals.listen_address;
-        let listener = TcpListener::bind(&listen_address).await?;
+        let listener = TcpListener::bind(&listen_address)
+            .await
+            .map_err(|e| DoHError::Io(e))?;
         let path = &self.globals.path;
 
         #[cfg(feature = "tls")]
