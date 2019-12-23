@@ -277,6 +277,7 @@ impl DoH {
 
         let mut server = Http::new();
         server.keep_alive(self.globals.keepalive);
+        server.pipeline_flush(true);
 
         #[cfg(feature = "tls")]
         {
