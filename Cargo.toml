@@ -1,6 +1,6 @@
 [package]
 name = "doh-proxy"
-version = "0.1.21"
+version = "0.2.0"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "A DNS-over-HTTPS (DoH) proxy"
 keywords = ["dns","https","doh","proxy"]
@@ -19,11 +19,11 @@ tls = ["native-tls", "tokio-tls"]
 anyhow = "1.0"
 base64 = "0.11"
 clap = "2.33.0"
-futures = "0.3"
-hyper = "0.13"
+futures = { version = "0.3" }
+hyper = { version = "0.13", default-features = false, features = ["stream"] }
 jemallocator = "0"
 native-tls = { version = "0.2.3", optional = true }
-tokio = { version = "0.2", features = ["full"] }
+tokio = { version = "0.2", features = ["rt-threaded", "time", "tcp", "udp", "stream"] }
 tokio-tls = { version = "0.3", optional = true }
 
 [package.metadata.deb]
