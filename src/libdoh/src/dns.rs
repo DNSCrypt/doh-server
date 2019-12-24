@@ -244,7 +244,7 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), E
     };
     ensure!(packet_len < DNS_MAX_PACKET_SIZE, "Large packet");
     let pad_len = (block_size - 1) - ((packet_len + (block_size - 1)) & (block_size - 1));
-    let mut edns_padding_prr = vec![0u8; 2 + pad_len];
+    let mut edns_padding_prr = vec![b'X'; 2 + pad_len];
     edns_padding_prr[0] = (DNS_PTYPE_PADDING >> 8) as u8;
     edns_padding_prr[1] = DNS_PTYPE_PADDING as u8;
     let edns_padding_prr_len = edns_padding_prr.len();
