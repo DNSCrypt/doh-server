@@ -6,8 +6,8 @@ A fast and secure DoH (DNS-over-HTTPS) server written in Rust.
 
 ### Precompiled packages
 
-- [Linux x86_64 (tar)](https://github.com/jedisct1/rust-doh/suites/316239337/artifacts/355547)
-- [Linux x86_64 (debian package)](https://github.com/jedisct1/rust-doh/suites/316239337/artifacts/355548)
+- [Linux x86_64 (tar)](https://github.com/jedisct1/rust-doh/suites/372946496/artifacts/826054)
+- [Linux x86_64 (debian package)](https://github.com/jedisct1/rust-doh/suites/372946496/artifacts/826053)
 
 ### From source code
 
