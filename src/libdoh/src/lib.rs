@@ -37,7 +37,7 @@ fn http_error(status_code: StatusCode) -> Result<Response<Body>, http::Error> {
 }
 
 #[derive(Clone, Debug)]
-struct LocalExecutor {
+pub struct LocalExecutor {
     runtime_handle: runtime::Handle,
 }
 

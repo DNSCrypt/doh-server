@@ -1,5 +1,5 @@
 use crate::errors::*;
-use crate::DoH;
+use crate::{DoH, LocalExecutor};
 
 use hyper::server::conn::Http;
 use native_tls::{self, Identity};
@@ -42,7 +42,7 @@ impl DoH {
         self,
         tls_acceptor: TlsAcceptor,
         mut listener: TcpListener,
-        server: Http,
+        server: Http<LocalExecutor>,
     ) -> Result<(), DoHError> {
         let listener_service = async {
             while let Some(raw_stream) = listener.incoming().next().await {
