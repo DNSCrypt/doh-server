@@ -1,5 +1,5 @@
 mod constants;
-mod dns;
+pub mod dns;
 mod errors;
 mod globals;
 #[cfg(feature = "tls")]
