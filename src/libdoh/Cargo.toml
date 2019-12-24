@@ -2,9 +2,13 @@
 name = "libdoh"
 version = "0.2.0"
 authors = ["Frank Denis <github@pureftpd.org>"]
+description = "DoH library for the rust-doh app"
+keywords = ["dns","https","doh","proxy"]
 license = "MIT"
+homepage = "https://github.com/jedisct1/rust-doh"
+repository = "https://github.com/jedisct1/rust-doh"
+categories = ["asynchronous", "network-programming","command-line-utilities"]
 edition = "2018"
-publish = false
 
 [features]
 default = []
