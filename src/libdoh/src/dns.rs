@@ -83,7 +83,7 @@ fn skip_name(packet: &[u8], offset: usize) -> Result<usize, Error> {
 fn traverse_rrs<F: FnMut(usize) -> Result<(), Error>>(
     packet: &[u8],
     mut offset: usize,
-    rrcount: u16,
+    rrcount: usize,
     mut cb: F,
 ) -> Result<usize, Error> {
     let packet_len = packet.len();
@@ -105,7 +105,7 @@ fn traverse_rrs<F: FnMut(usize) -> Result<(), Error>>(
 fn traverse_rrs_mut<F: FnMut(&mut [u8], usize) -> Result<(), Error>>(
     packet: &mut [u8],
     mut offset: usize,
-    rrcount: u16,
+    rrcount: usize,
     mut cb: F,
 ) -> Result<usize, Error> {
     let packet_len = packet.len();
@@ -137,7 +137,7 @@ pub fn min_ttl(packet: &[u8], min_ttl: u32, max_ttl: u32, failure_ttl: u32) -> R
     let rrcount = ancount + nscount + arcount;
     let mut found_min_ttl = if rrcount > 0 { max_ttl } else { failure_ttl };
 
-    offset = traverse_rrs(packet, offset, rrcount, |offset| {
+    offset = traverse_rrs(packet, offset, rrcount as _, |offset| {
         let qtype = BigEndian::read_u16(&packet[offset..]);
         let ttl = BigEndian::read_u32(&packet[offset + 4..]);
         if qtype != DNS_TYPE_OPT && ttl < found_min_ttl {
@@ -186,9 +186,14 @@ pub fn set_edns_max_payload_size(packet: &mut Vec<u8>, max_payload_size: u16) ->
     ensure!(packet_len - offset >= 4, "Short packet");
     offset += 4;
     let (ancount, nscount, arcount) = (ancount(packet), nscount(packet), arcount(packet));
-    offset = traverse_rrs(packet, offset, ancount + nscount, |_offset| Ok(()))?;
+    offset = traverse_rrs(
+        packet,
+        offset,
+        ancount as usize + nscount as usize,
+        |_offset| Ok(()),
+    )?;
     let mut edns_payload_set = false;
-    traverse_rrs_mut(packet, offset, arcount, |packet, offset| {
+    traverse_rrs_mut(packet, offset, arcount as _, |packet, offset| {
         let qtype = BigEndian::read_u16(&packet[offset..]);
         if qtype == DNS_TYPE_OPT {
             ensure!(!edns_payload_set, "Duplicate OPT RR found");
@@ -215,9 +220,14 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), E
     ensure!(packet_len - offset >= 4, "Short packet");
     offset += 4;
     let (ancount, nscount, arcount) = (ancount(packet), nscount(packet), arcount(packet));
-    offset = traverse_rrs(packet, offset, ancount + nscount, |_offset| Ok(()))?;
+    offset = traverse_rrs(
+        packet,
+        offset,
+        ancount as usize + nscount as usize,
+        |_offset| Ok(()),
+    )?;
     let mut edns_offset = None;
-    traverse_rrs_mut(packet, offset, arcount, |packet, offset| {
+    traverse_rrs_mut(packet, offset, arcount as _, |packet, offset| {
         let qtype = BigEndian::read_u16(&packet[offset..]);
         if qtype == DNS_TYPE_OPT {
             ensure!(edns_offset.is_none(), "Duplicate OPT RR found");
