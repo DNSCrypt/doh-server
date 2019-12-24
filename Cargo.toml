@@ -16,7 +16,7 @@ default = []
 tls = ["libdoh/tls"]
 
 [dependencies]
-libdoh = { path = "src/libdoh" }
+libdoh = { path = "src/libdoh", version = "0.2" }
 clap = "2"
 jemallocator = "0"
 tokio = { version = "0.2", features = ["rt-threaded", "time", "tcp", "udp", "stream"] }
