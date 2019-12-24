@@ -244,9 +244,9 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), E
     };
     ensure!(packet_len < DNS_MAX_PACKET_SIZE, "Large packet");
     let pad_len = (block_size - 1) - ((packet_len + (block_size - 1)) & (block_size - 1));
-    let mut edns_padding_prr = vec![b'X'; 2 + pad_len];
-    edns_padding_prr[0] = (DNS_PTYPE_PADDING >> 8) as u8;
-    edns_padding_prr[1] = DNS_PTYPE_PADDING as u8;
+    let mut edns_padding_prr = vec![b'X'; 4 + pad_len];
+    BigEndian::write_u16(&mut edns_padding_prr[0..], DNS_PTYPE_PADDING);
+    BigEndian::write_u16(&mut edns_padding_prr[2..], pad_len as u16);
     let edns_padding_prr_len = edns_padding_prr.len();
     let edns_rdlen_offset: usize = edns_offset + 8;
     ensure!(packet_len - edns_rdlen_offset >= 2, "Short packet");
