@@ -125,10 +125,10 @@ fn traverse_rrs_mut<F: FnMut(&mut [u8], usize) -> Result<(), Error>>(
 }
 
 pub fn min_ttl(packet: &[u8], min_ttl: u32, max_ttl: u32, failure_ttl: u32) -> Result<u32, Error> {
-    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
     let packet_len = packet.len();
     ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
     ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
+    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
     let mut offset = skip_name(packet, DNS_OFFSET_QUESTION)?;
     assert!(offset > DNS_OFFSET_QUESTION);
     ensure!(packet_len - offset > 4, "Short packet");
@@ -176,11 +176,10 @@ fn add_edns_section(packet: &mut Vec<u8>, max_payload_size: u16) -> Result<(), E
 }
 
 pub fn set_edns_max_payload_size(packet: &mut Vec<u8>, max_payload_size: u16) -> Result<(), Error> {
-    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
     let packet_len = packet.len();
     ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
     ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
-
+    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
     let mut offset = skip_name(packet, DNS_OFFSET_QUESTION)?;
     assert!(offset > DNS_OFFSET_QUESTION);
     ensure!(packet_len - offset >= 4, "Short packet");
@@ -210,11 +209,10 @@ pub fn set_edns_max_payload_size(packet: &mut Vec<u8>, max_payload_size: u16) ->
 }
 
 pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), Error> {
-    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
     let mut packet_len = packet.len();
     ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
     ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
-
+    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
     let mut offset = skip_name(packet, DNS_OFFSET_QUESTION)?;
     assert!(offset > DNS_OFFSET_QUESTION);
     ensure!(packet_len - offset >= 4, "Short packet");
