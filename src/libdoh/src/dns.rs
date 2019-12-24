@@ -128,16 +128,16 @@ pub fn min_ttl(packet: &[u8], min_ttl: u32, max_ttl: u32, failure_ttl: u32) -> R
     let packet_len = packet.len();
     ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
     ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
-    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
+    ensure!(qdcount(packet) == 1, "No question");
     let mut offset = skip_name(packet, DNS_OFFSET_QUESTION)?;
     assert!(offset > DNS_OFFSET_QUESTION);
     ensure!(packet_len - offset > 4, "Short packet");
     offset += 4;
     let (ancount, nscount, arcount) = (ancount(packet), nscount(packet), arcount(packet));
-    let rrcount = ancount + nscount + arcount;
+    let rrcount = ancount as usize + nscount as usize + arcount as usize;
     let mut found_min_ttl = if rrcount > 0 { max_ttl } else { failure_ttl };
 
-    offset = traverse_rrs(packet, offset, rrcount as _, |offset| {
+    offset = traverse_rrs(packet, offset, rrcount, |offset| {
         let qtype = BigEndian::read_u16(&packet[offset..]);
         let ttl = BigEndian::read_u32(&packet[offset + 4..]);
         if qtype != DNS_TYPE_OPT && ttl < found_min_ttl {
@@ -179,7 +179,7 @@ pub fn set_edns_max_payload_size(packet: &mut Vec<u8>, max_payload_size: u16) ->
     let packet_len = packet.len();
     ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
     ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
-    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
+    ensure!(qdcount(packet) == 1, "No question");
     let mut offset = skip_name(packet, DNS_OFFSET_QUESTION)?;
     assert!(offset > DNS_OFFSET_QUESTION);
     ensure!(packet_len - offset >= 4, "Short packet");
@@ -212,7 +212,7 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), E
     let mut packet_len = packet.len();
     ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
     ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
-    ensure!(qdcount(packet) == 1, "Unsupported number of questions");
+    ensure!(qdcount(packet) == 1, "No question");
     let mut offset = skip_name(packet, DNS_OFFSET_QUESTION)?;
     assert!(offset > DNS_OFFSET_QUESTION);
     ensure!(packet_len - offset >= 4, "Short packet");
@@ -251,7 +251,6 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), E
     let edns_rdlen_offset: usize = edns_offset + 8;
     ensure!(packet_len - edns_rdlen_offset >= 2, "Short packet");
     let edns_rdlen = BigEndian::read_u16(&packet[edns_rdlen_offset..]);
-    dbg!(edns_rdlen);
     ensure!(
         edns_offset + edns_rdlen as usize <= packet_len,
         "Out of range EDNS size"
