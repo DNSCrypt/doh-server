@@ -1,5 +1,6 @@
+use libdoh::*;
+
 use crate::constants::*;
-use crate::globals::*;
 
 use clap::Arg;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};

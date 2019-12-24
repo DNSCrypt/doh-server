@@ -243,6 +243,11 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), E
     let edns_rdlen_offset: usize = edns_offset + 8;
     ensure!(packet_len - edns_rdlen_offset >= 2, "Short packet");
     let edns_rdlen = BigEndian::read_u16(&packet[edns_rdlen_offset..]);
+    dbg!(edns_rdlen);
+    ensure!(
+        edns_offset + edns_rdlen as usize <= packet_len,
+        "Out of range EDNS size"
+    );
     ensure!(
         0xffff - edns_rdlen as usize >= edns_padding_prr_len,
         "EDNS section too large for padding"

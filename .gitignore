@@ -1,5 +1,7 @@
 #*#
 **/*.rs.bk
 *~
+Cargo.lock
 /target/
+/src/libdoh/target/
 

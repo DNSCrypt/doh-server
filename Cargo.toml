@@ -13,19 +13,13 @@ readme = "README.md"
 
 [features]
 default = []
-tls = ["native-tls", "tokio-tls"]
+tls = ["libdoh/tls"]
 
 [dependencies]
-anyhow = "1.0"
-byteorder = "1.3"
-base64 = "0.11"
-clap = "2.33.0"
-futures = { version = "0.3" }
-hyper = { version = "0.13", default-features = false, features = ["stream"] }
+libdoh = { path = "src/libdoh" }
+clap = "2"
 jemallocator = "0"
-native-tls = { version = "0.2.3", optional = true }
 tokio = { version = "0.2", features = ["rt-threaded", "time", "tcp", "udp", "stream"] }
-tokio-tls = { version = "0.3", optional = true }
 
 [package.metadata.deb]
 extended-description = """\
