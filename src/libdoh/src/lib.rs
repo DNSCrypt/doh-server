@@ -21,6 +21,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, UdpSocket};
+use tokio::runtime;
 
 #[derive(Clone, Debug)]
 pub struct DoH {
@@ -33,6 +34,27 @@ fn http_error(status_code: StatusCode) -> Result<Response<Body>, http::Error> {
         .body(Body::empty())
         .unwrap();
     Ok(response)
+}
+
+#[derive(Clone, Debug)]
+struct LocalExecutor {
+    runtime_handle: runtime::Handle,
+}
+
+impl LocalExecutor {
+    fn new(runtime_handle: runtime::Handle) -> Self {
+        LocalExecutor { runtime_handle }
+    }
+}
+
+impl<F> hyper::rt::Executor<F> for LocalExecutor
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send,
+{
+    fn execute(&self, fut: F) {
+        self.runtime_handle.spawn(fut);
+    }
 }
 
 impl hyper::service::Service<http::Request<Body>> for DoH {
@@ -188,7 +210,7 @@ impl DoH {
         Ok(response)
     }
 
-    async fn client_serve<I>(self, stream: I, server: Http)
+    async fn client_serve<I>(self, stream: I, server: Http<LocalExecutor>)
     where
         I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
     {
@@ -197,7 +219,7 @@ impl DoH {
             clients_count.decrement();
             return;
         }
-        tokio::spawn(async move {
+        self.globals.runtime_handle.clone().spawn(async move {
             tokio::time::timeout(self.globals.timeout, server.serve_connection(stream, self))
                 .await
                 .ok();
@@ -208,7 +230,7 @@ impl DoH {
     async fn start_without_tls(
         self,
         mut listener: TcpListener,
-        server: Http,
+        server: Http<LocalExecutor>,
     ) -> Result<(), DoHError> {
         let listener_service = async {
             while let Some(stream) = listener.incoming().next().await {
@@ -250,6 +272,8 @@ impl DoH {
         let mut server = Http::new();
         server.keep_alive(self.globals.keepalive);
         server.pipeline_flush(true);
+        let executor = LocalExecutor::new(self.globals.runtime_handle.clone());
+        let server = server.with_executor(executor);
 
         #[cfg(feature = "tls")]
         {

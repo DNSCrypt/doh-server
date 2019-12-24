@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::runtime;
 
 #[cfg(feature = "tls")]
 use std::path::PathBuf;
@@ -26,6 +27,8 @@ pub struct Globals {
     pub err_ttl: u32,
     pub keepalive: bool,
     pub disable_post: bool,
+
+    pub runtime_handle: runtime::Handle,
 }
 
 #[derive(Debug, Clone, Default)]

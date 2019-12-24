@@ -18,6 +18,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 fn main() {
+    let mut runtime_builder = tokio::runtime::Builder::new();
+    runtime_builder.enable_all();
+    runtime_builder.threaded_scheduler();
+    runtime_builder.thread_name("doh-proxy");
+    let mut runtime = runtime_builder.build().unwrap();
+
     let mut globals = Globals {
         #[cfg(feature = "tls")]
         tls_cert_path: None,
@@ -36,15 +42,12 @@ fn main() {
         err_ttl: ERR_TTL,
         keepalive: true,
         disable_post: false,
+
+        runtime_handle: runtime.handle().clone(),
     };
     parse_opts(&mut globals);
     let doh = DoH {
         globals: Arc::new(globals),
     };
-    let mut runtime_builder = tokio::runtime::Builder::new();
-    runtime_builder.enable_all();
-    runtime_builder.threaded_scheduler();
-    runtime_builder.thread_name("doh-proxy");
-    let mut runtime = runtime_builder.build().unwrap();
     runtime.block_on(doh.entrypoint()).unwrap();
 }
