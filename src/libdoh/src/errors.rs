@@ -8,6 +8,7 @@ pub enum DoHError {
     InvalidData,
     TooLarge,
     UpstreamIssue,
+    UpstreamTimeout,
     Hyper(hyper::Error),
     Io(io::Error),
 }
@@ -25,6 +26,7 @@ impl std::error::Error for DoHError {
             DoHError::InvalidData => "Invalid data",
             DoHError::TooLarge => "Too large",
             DoHError::UpstreamIssue => "Upstream error",
+            DoHError::UpstreamTimeout => "Upstream timeout",
             DoHError::Hyper(_) => self.description(),
             DoHError::Io(_) => self.description(),
         }
@@ -38,6 +40,7 @@ impl From<DoHError> for StatusCode {
             DoHError::InvalidData => StatusCode::BAD_REQUEST,
             DoHError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             DoHError::UpstreamIssue => StatusCode::BAD_GATEWAY,
+            DoHError::UpstreamTimeout => StatusCode::BAD_GATEWAY,
             DoHError::Hyper(_) => StatusCode::SERVICE_UNAVAILABLE,
             DoHError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }

@@ -19,6 +19,7 @@ use hyper::server::conn::Http;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::runtime;
@@ -182,8 +183,20 @@ impl DoH {
             .map_err(DoHError::Io)
             .await?;
         let mut packet = vec![0; MAX_DNS_RESPONSE_LEN];
-        let (len, response_server_address) =
-            socket.recv_from(&mut packet).map_err(DoHError::Io).await?;
+        let socket_timeout = self
+            .globals
+            .timeout
+            .checked_sub(Duration::from_secs(1))
+            .unwrap_or(self.globals.timeout);
+        let timeout_res = tokio::time::timeout(
+            socket_timeout,
+            socket.recv_from(&mut packet).map_err(DoHError::Io),
+        )
+        .await;
+        let (len, response_server_address) = match timeout_res {
+            Err(_) => return Err(DoHError::UpstreamTimeout),
+            Ok(recv_res) => recv_res?,
+        };
         if len < MIN_DNS_PACKET_LEN || expected_server_address != response_server_address {
             return Err(DoHError::UpstreamIssue);
         }
