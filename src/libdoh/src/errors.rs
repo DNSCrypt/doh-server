@@ -13,22 +13,18 @@ pub enum DoHError {
     Io(io::Error),
 }
 
+impl std::error::Error for DoHError {}
+
 impl std::fmt::Display for DoHError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        std::fmt::Debug::fmt(self, fmt)
-    }
-}
-
-impl std::error::Error for DoHError {
-    fn description(&self) -> &str {
-        match *self {
-            DoHError::Incomplete => "Incomplete",
-            DoHError::InvalidData => "Invalid data",
-            DoHError::TooLarge => "Too large",
-            DoHError::UpstreamIssue => "Upstream error",
-            DoHError::UpstreamTimeout => "Upstream timeout",
-            DoHError::Hyper(_) => self.description(),
-            DoHError::Io(_) => self.description(),
+        match self {
+            DoHError::Incomplete => write!(fmt, "Incomplete"),
+            DoHError::InvalidData => write!(fmt, "Invalid data"),
+            DoHError::TooLarge => write!(fmt, "Too large"),
+            DoHError::UpstreamIssue => write!(fmt, "Upstream error"),
+            DoHError::UpstreamTimeout => write!(fmt, "Upstream timeout"),
+            DoHError::Hyper(e) => write!(fmt, "HTTP error: {}", e),
+            DoHError::Io(e) => write!(fmt, "IO error: {}", e),
         }
     }
 }
