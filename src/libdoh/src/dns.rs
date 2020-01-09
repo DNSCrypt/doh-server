@@ -1,5 +1,7 @@
 use anyhow::{ensure, Error};
 use byteorder::{BigEndian, ByteOrder};
+use padme_padding::Padme;
+use std::cmp;
 
 const DNS_HEADER_SIZE: usize = 12;
 const DNS_MAX_HOSTNAME_SIZE: usize = 256;
@@ -208,7 +210,7 @@ pub fn set_edns_max_payload_size(packet: &mut Vec<u8>, max_payload_size: u16) ->
     Ok(())
 }
 
-pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), Error> {
+pub fn add_edns_padding(packet: &mut Vec<u8>, min_size: usize) -> Result<(), Error> {
     let mut packet_len = packet.len();
     ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
     ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
@@ -243,10 +245,10 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, block_size: usize) -> Result<(), E
         }
     };
     ensure!(packet_len < DNS_MAX_PACKET_SIZE, "Large packet");
-    let pad_len = (block_size - 1) - ((packet_len + (block_size - 1)) & (block_size - 1));
-    let mut edns_padding_prr = vec![b'X'; 4 + pad_len];
+    let padding_len = cmp::max(min_size, Padme::padding_len(packet_len));
+    let mut edns_padding_prr = vec![b'X'; 4 + padding_len];
     BigEndian::write_u16(&mut edns_padding_prr[0..], DNS_PTYPE_PADDING);
-    BigEndian::write_u16(&mut edns_padding_prr[2..], pad_len as u16);
+    BigEndian::write_u16(&mut edns_padding_prr[2..], padding_len as u16);
     let edns_padding_prr_len = edns_padding_prr.len();
     let edns_rdlen_offset: usize = edns_offset + 8;
     ensure!(packet_len - edns_rdlen_offset >= 2, "Short packet");
