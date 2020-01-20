@@ -1,7 +1,5 @@
 use anyhow::{ensure, Error};
 use byteorder::{BigEndian, ByteOrder};
-use padme_padding::Padme;
-use std::cmp;
 
 const DNS_HEADER_SIZE: usize = 12;
 const DNS_MAX_HOSTNAME_SIZE: usize = 256;
@@ -210,7 +208,18 @@ pub fn set_edns_max_payload_size(packet: &mut Vec<u8>, max_payload_size: u16) ->
     Ok(())
 }
 
-pub fn add_edns_padding(packet: &mut Vec<u8>, min_size: usize) -> Result<(), Error> {
+fn padded_len(unpadded_len: usize) -> usize {
+    const BOUNDARIES: [usize; 16] = [
+        64, 128, 192, 256, 320, 384, 512, 704, 768, 896, 960, 1024, 1088, 1152, 2688, 4080,
+    ];
+    BOUNDARIES
+        .iter()
+        .find(|&&boundary| boundary >= unpadded_len)
+        .copied()
+        .unwrap_or(DNS_MAX_PACKET_SIZE)
+}
+
+pub fn add_edns_padding(packet: &mut Vec<u8>) -> Result<(), Error> {
     let mut packet_len = packet.len();
     ensure!(packet_len > DNS_OFFSET_QUESTION, "Short packet");
     ensure!(packet_len <= DNS_MAX_PACKET_SIZE, "Large packet");
@@ -244,8 +253,7 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, min_size: usize) -> Result<(), Err
             edns_offset
         }
     };
-    ensure!(packet_len < DNS_MAX_PACKET_SIZE, "Large packet");
-    let padding_len = cmp::max(min_size, Padme::padding_len(packet_len));
+    let padding_len = padded_len(packet_len) - packet_len;
     let mut edns_padding_prr = vec![b'X'; 4 + padding_len];
     BigEndian::write_u16(&mut edns_padding_prr[0..], DNS_PTYPE_PADDING);
     BigEndian::write_u16(&mut edns_padding_prr[2..], padding_len as u16);
@@ -261,13 +269,13 @@ pub fn add_edns_padding(packet: &mut Vec<u8>, min_size: usize) -> Result<(), Err
         0xffff - edns_rdlen as usize >= edns_padding_prr_len,
         "EDNS section too large for padding"
     );
-    BigEndian::write_u16(
-        &mut packet[edns_rdlen_offset..],
-        edns_rdlen + edns_padding_prr_len as u16,
-    );
     ensure!(
         DNS_MAX_PACKET_SIZE - packet_len >= edns_padding_prr_len,
         "Large packet"
+    );
+    BigEndian::write_u16(
+        &mut packet[edns_rdlen_offset..],
+        edns_rdlen + edns_padding_prr_len as u16,
     );
     packet.extend(&edns_padding_prr);
     Ok(())

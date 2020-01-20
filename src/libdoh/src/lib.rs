@@ -203,7 +203,9 @@ impl DoH {
                 Ok(ttl) => ttl,
             }
         };
-        dns::add_edns_padding(&mut packet, BLOCK_SIZE).map_err(|_| DoHError::TooLarge)?;
+        dns::add_edns_padding(&mut packet)
+            .map_err(|_| DoHError::TooLarge)
+            .ok();
         let packet_len = packet.len();
         let response = Response::builder()
             .header(hyper::header::CONTENT_LENGTH, packet_len)
