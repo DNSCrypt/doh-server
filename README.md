@@ -13,16 +13,16 @@ A fast and secure DoH (DNS-over-HTTPS) server written in Rust.
 
 This requires the `rust` compiler to be installed.
 
-Without built-in support for HTTPS:
+With built-in support for HTTPS (default):
 
 ```sh
 cargo install doh-proxy
 ```
 
-With built-in support for HTTPS (requires openssl-dev):
+Without built-in support for HTTPS:
 
 ```sh
-cargo install doh-proxy
+cargo install doh-proxy --no-default-features
 ```
 
 ## Usage
