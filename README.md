@@ -22,14 +22,12 @@ cargo install doh-proxy
 With built-in support for HTTPS (requires openssl-dev):
 
 ```sh
-cargo install doh-proxy --features=tls
+cargo install doh-proxy
 ```
 
 ## Usage
 
 ```text
-A DNS-over-HTTP server proxy
-
 USAGE:
     doh-proxy [FLAGS] [OPTIONS]
 
@@ -42,17 +40,17 @@ FLAGS:
 OPTIONS:
     -E, --err-ttl <err_ttl>                          TTL for errors, in seconds [default: 2]
     -l, --listen-address <listen_address>            Address to listen to [default: 127.0.0.1:3000]
-    -b, --local-bind-address <local_bind_address>    Address to connect from [default: 0.0.0.0:0]
+    -b, --local-bind-address <local_bind_address>    Address to connect from
     -c, --max-clients <max_clients>                  Maximum number of simultaneous clients [default: 512]
     -X, --max-ttl <max_ttl>                          Maximum TTL, in seconds [default: 604800]
     -T, --min-ttl <min_ttl>                          Minimum TTL, in seconds [default: 10]
     -p, --path <path>                                URI path [default: /dns-query]
     -u, --server-address <server_address>            Address to connect to [default: 9.9.9.9:53]
     -t, --timeout <timeout>                          Timeout, in seconds [default: 10]
-    -I, --tls-cert-password <tls_cert_password>
-            Password for the PKCS12-encoded identity (only required for built-in TLS)
+    -I, --tls-cert-key-path <tls_cert_key_path>
+            Path to the PEM-encoded secret keys (only required for built-in TLS)
 
-    -i, --tls-cert-path <tls_cert_path>              Path to a PKCS12-encoded identity (only required for built-in TLS)
+    -i, --tls-cert-path <tls_cert_path>              Path to a PEM-encoded identity (only required for built-in TLS)
 ```
 
 ## HTTP/2 termination
@@ -65,22 +63,14 @@ If `doh-proxy` and the HTTP/2 front-end run on the same host, using the HTTP pro
 
 If both are on distinct networks, such as when using a CDN, `doh-proxy` can handle HTTPS requests, provided that it was compiled with the `tls` feature.
 
-The identity must be encoded in PKCS12 format. Given an existing certificate `cert.pem` and its secret key `cert.key`, this can be achieved using the `openssl` command-line tool:
+The certificates and private keys must be encoded in PEM format. They can be stored in the same file.
 
-```sh
-openssl pkcs12 -export -out cert.p12 -in cert.pem -inkey cert.key
-```
-
-A password will be interactive asked for, but the `-passout` command-line option can be added to provide it non-interactively.
-
-Once done, check that the permissions on `cert.p12` are reasonable.
-
-In order to enable built-in HTTPS support, add the `--tls-cert-path` option to specify the location of the `cert.p12` file, as well as the password using `--tls-cert-password`.
+In order to enable built-in HTTPS support, add the `--tls-cert-path` option to specify the location of the certificates file, as well as the private keys file using `--tls-cert-key-path`.
 
 Once HTTPS is enabled, HTTP connections will not be accepted.
 
-A sample self-signed certificate [`localhost.p12`](https://github.com/jedisct1/rust-doh/raw/master/localhost.p12) can be used for testing.
-The password is `test`.
+A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/rust-doh/raw/master/localhost.pem) can be used for testing.
+The file also includes the private key.
 
 ## Accepting both DNSCrypt and DoH connections on port 443
 

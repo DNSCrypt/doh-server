@@ -13,7 +13,7 @@ pub struct Globals {
     pub tls_cert_path: Option<PathBuf>,
 
     #[cfg(feature = "tls")]
-    pub tls_cert_password: Option<String>,
+    pub tls_cert_key_path: Option<PathBuf>,
 
     pub listen_address: SocketAddr,
     pub local_bind_address: SocketAddr,

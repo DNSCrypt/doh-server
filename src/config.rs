@@ -114,14 +114,14 @@ pub fn parse_opts(globals: &mut Globals) {
                 .short("i")
                 .long("tls-cert-path")
                 .takes_value(true)
-                .help("Path to a PKCS12-encoded identity (only required for built-in TLS)"),
+                .help("Path to a PEM-encoded certificates (only required for built-in TLS)"),
         )
         .arg(
-            Arg::with_name("tls_cert_password")
+            Arg::with_name("tls_cert_key_path")
                 .short("I")
-                .long("tls-cert-password")
+                .long("tls-cert-key-path")
                 .takes_value(true)
-                .help("Password for the PKCS12-encoded identity (only required for built-in TLS)"),
+                .help("Path to the PEM-encoded secret keys (only required for built-in TLS)"),
         );
 
     let matches = options.get_matches();
@@ -160,9 +160,7 @@ pub fn parse_opts(globals: &mut Globals) {
 
     #[cfg(feature = "tls")]
     {
-        globals.tls_cert_path = matches.value_of("tls_cert_path").map(PathBuf::from);
-        globals.tls_cert_password = matches
-            .value_of("tls_cert_password")
-            .map(ToString::to_string);
+        globals.tls_cert_path = matches.value_of("tls_cert_key_path").map(PathBuf::from);
+        globals.tls_cert_key_path = matches.value_of("tls_cert_key_path").map(PathBuf::from);
     }
 }

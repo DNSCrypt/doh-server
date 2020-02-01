@@ -2,39 +2,80 @@ use crate::errors::*;
 use crate::{DoH, LocalExecutor};
 
 use hyper::server::conn::Http;
-use native_tls::{self, Identity};
 use std::fs::File;
-use std::io;
-use std::io::Read;
+use std::io::{self, BufReader};
 use std::path::Path;
-use tokio::stream::StreamExt;
-pub use tokio_tls::TlsAcceptor;
-
+use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::stream::StreamExt;
+use tokio_rustls::{
+    rustls::{internal::pemfile, NoClientAuth, ServerConfig},
+    TlsAcceptor,
+};
 
-pub fn create_tls_acceptor<P>(path: P, password: &str) -> io::Result<TlsAcceptor>
+pub fn create_tls_acceptor<P, P2>(certs_path: P, certs_keys_path: P2) -> io::Result<TlsAcceptor>
 where
     P: AsRef<Path>,
+    P2: AsRef<Path>,
 {
-    let identity_bin = {
-        let mut fp = File::open(path)?;
-        let mut identity_bin = vec![];
-        fp.read_to_end(&mut identity_bin)?;
-        identity_bin
+    let certs = {
+        let certs_path_str = certs_path.as_ref().display().to_string();
+        let mut reader = BufReader::new(File::open(certs_path).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!(
+                    "Unable to load the certificates [{}]: {}",
+                    certs_path_str,
+                    e.to_string()
+                ),
+            )
+        })?);
+        pemfile::certs(&mut reader).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unable to parse the certificates",
+            )
+        })?
     };
-    let identity = Identity::from_pkcs12(&identity_bin, password).map_err(|_| {
-        io::Error::new(
+    let certs_keys = {
+        let certs_keys_path_str = certs_keys_path.as_ref().display().to_string();
+        let mut reader = BufReader::new(File::open(certs_keys_path).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!(
+                    "Unable to load the certificate keys [{}]: {}",
+                    certs_keys_path_str,
+                    e.to_string()
+                ),
+            )
+        })?);
+        let keys = pemfile::pkcs8_private_keys(&mut reader).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unable to parse the certificates private keys",
+            )
+        })?;
+        if keys.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "No private keys found",
+            ));
+        }
+        keys
+    };
+    let mut server_config = ServerConfig::new(NoClientAuth::new());
+    let has_valid_cert_and_key = certs_keys.into_iter().any(|certs_key| {
+        server_config
+            .set_single_cert(certs.clone(), certs_key)
+            .is_ok()
+    });
+    if !has_valid_cert_and_key {
+        return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Unusable PKCS12-encoded identity. The encoding and/or the password may be wrong",
-        )
-    })?;
-    let native_acceptor = native_tls::TlsAcceptor::new(identity).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Unable to use the provided PKCS12-encoded identity",
-        )
-    })?;
-    Ok(TlsAcceptor::from(native_acceptor))
+            "Invalid private key for the given certificate",
+        ));
+    }
+    Ok(TlsAcceptor::from(Arc::new(server_config)))
 }
 
 impl DoH {

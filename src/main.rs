@@ -28,7 +28,7 @@ fn main() {
         #[cfg(feature = "tls")]
         tls_cert_path: None,
         #[cfg(feature = "tls")]
-        tls_cert_password: None,
+        tls_cert_key_path: None,
 
         listen_address: LISTEN_ADDRESS.parse().unwrap(),
         local_bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),

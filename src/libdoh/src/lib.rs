@@ -266,9 +266,9 @@ impl DoH {
         let path = &self.globals.path;
 
         #[cfg(feature = "tls")]
-        let tls_acceptor = match (&self.globals.tls_cert_path, &self.globals.tls_cert_password) {
-            (Some(tls_cert_path), Some(tls_cert_password)) => {
-                Some(create_tls_acceptor(tls_cert_path, tls_cert_password).unwrap())
+        let tls_acceptor = match (&self.globals.tls_cert_path, &self.globals.tls_cert_key_path) {
+            (Some(tls_cert_path), Some(tls_cert_key_path)) => {
+                Some(create_tls_acceptor(tls_cert_path, tls_cert_key_path).unwrap())
             }
             _ => None,
         };

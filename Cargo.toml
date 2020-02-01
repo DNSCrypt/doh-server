@@ -12,11 +12,11 @@ edition = "2018"
 readme = "README.md"
 
 [features]
-default = []
+default = ["tls"]
 tls = ["libdoh/tls"]
 
 [dependencies]
-libdoh = { path = "src/libdoh", version = "0.2" }
+libdoh = { path = "src/libdoh", version = "0.3" }
 clap = "2"
 jemallocator = "0"
 tokio = { version = "0.2", features = ["rt-threaded", "time", "tcp", "udp", "stream"] }
