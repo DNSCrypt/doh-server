@@ -1,6 +1,6 @@
 [package]
 name = "doh-proxy"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "A DNS-over-HTTPS (DoH) proxy"
 keywords = ["dns","https","doh","proxy"]
@@ -19,7 +19,7 @@ tls = ["libdoh/tls"]
 libdoh = { path = "src/libdoh", version = "0.3" }
 clap = "2"
 jemallocator = "0"
-tokio = { version = "0.2", features = ["rt-threaded", "time", "tcp", "udp", "stream"] }
+tokio = { version = "0.2.11", features = ["rt-threaded", "time", "tcp", "udp", "stream", "parking_lot"] }
 
 [package.metadata.deb]
 extended-description = """\
