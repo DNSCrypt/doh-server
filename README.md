@@ -116,11 +116,38 @@ This example assumes that the DoH proxy is listening locally to port `3000`.
 
 HTTP caching can be added (see the `proxy_cache_path` and `proxy_cache` directives in the Nginx documentation), but be aware that a DoH server will quickly create a gigantic amount of files.
 
-Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server, and the `dnscrypt-proxy -show-certs` command to print the TLS certificate signatures to be added it.
+## DNS Stamp and certificate hashes
+
+Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server.
+
+Add it to the `[static]` section of [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy)` and check that everything works as expected.
+
+Then, start `dnscrypt-proxy` with the `-show-certs` command-line flag to print the hashes for your certificate chain.
+
+Here is an example output:
+
+```text
+[NOTICE] Advertised cert: [CN=dohtrial.att.net,O=AT&T Services\, Inc.,L=Dallas,ST=Texas,C=US] [f679e8451940f06141854dc94e1eb79fa5e04463c15b88f3b392da793c16c353]
+[NOTICE] Advertised cert: [CN=DigiCert Global CA G2,O=DigiCert Inc,C=US] [f61e576877da9650294cccb5f96c75fcb71bda1bbc4646367c4ebeda89d7318f]
+```
+
+The first printed certificate is the certificate of the server itself. The next line is the one that signed that certificate. As you keep going down, you are getting closer to the certificate authority.
+
+Unless you are using intermediate certificates, your safest option is probably to include the last printed hash certificate in your DNS stamp.
+
+Go back to the online DNS stamp calculator, and copy&paste the hash (in this example: `f61e576877da9650294cccb5f96c75fcb71bda1bbc4646367c4ebeda89d7318f`).
+
+If you are using Let's Encrypt, the last line is likely to be:
+
+```text
+Advertised cert: [CN=Let's Encrypt Authority X3,O=Let's Encrypt,C=US] [3e1a1a0f6c53f3e97a492d57084b5b9807059ee057ab1505876fd83fda3db838]
+```
+
+There you have it. Your certificate hash is `3e1a1a0f6c53f3e97a492d57084b5b9807059ee057ab1505876fd83fda3db838`.
 
 ## Clients
 
-`doh-proxy` can be used with [dnscrypt-proxy](https://github.com/jedisct1/dnscrypt-proxy)
+`doh-proxy` can be used with [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy)
 as a client.
 
 `doh-proxy` is currently being used by the `doh.crypto.sx` public DNS resolver.
