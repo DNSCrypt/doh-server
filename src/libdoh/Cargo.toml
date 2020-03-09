@@ -17,11 +17,11 @@ tls = ["tokio-rustls"]
 [dependencies]
 anyhow = "1.0"
 byteorder = "1.3"
-base64 = "0.11"
+base64 = "0.12"
 futures = "0.3"
 hyper = { version = "0.13", default-features = false, features = ["stream"] }
 tokio = { version = "0.2", features = ["rt-threaded", "time", "tcp", "udp", "stream"] }
-tokio-rustls = { version = "0.12", optional = true }
+tokio-rustls = { version = "0.13", optional = true }
 
 [profile.release]
 codegen-units = 1
