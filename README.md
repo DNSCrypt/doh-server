@@ -120,7 +120,7 @@ HTTP caching can be added (see the `proxy_cache_path` and `proxy_cache` directiv
 
 Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server.
 
-Add it to the `[static]` section of [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy)` and check that everything works as expected.
+Add it to the `[static]` section of [`dnscrypt-proxy`](https://github.com/DNSCrypt/dnscrypt-proxy) and check that everything works as expected.
 
 Then, start `dnscrypt-proxy` with the `-show-certs` command-line flag to print the hashes for your certificate chain.
 
