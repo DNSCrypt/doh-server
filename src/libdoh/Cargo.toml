@@ -20,7 +20,7 @@ byteorder = "1.3"
 base64 = "0.12"
 futures = "0.3"
 hyper = { version = "0.13", default-features = false, features = ["stream"] }
-tokio = { version = "0.2.11", features = ["rt-threaded", "time", "tcp", "udp", "stream", "parking_lot"] }
+tokio = { version = "0.2.13", features = ["rt-threaded", "time", "tcp", "udp", "stream", "parking_lot"] }
 tokio-rustls = { version = "0.13", optional = true }
 
 [profile.release]
