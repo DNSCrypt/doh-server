@@ -17,9 +17,9 @@ tls = ["libdoh/tls"]
 
 [dependencies]
 libdoh = { path = "src/libdoh", version = "0.3" }
-clap = "2"
-jemallocator = "0"
-tokio = { version = "0.2.13", features = ["rt-threaded", "time", "tcp", "udp", "stream", "parking_lot"] }
+clap = "2.33.0"
+jemallocator = "0.3.2"
+tokio = { version = "0.2.18", features = ["rt-threaded", "time", "tcp", "udp", "stream", "parking_lot"] }
 
 [package.metadata.deb]
 extended-description = """\
