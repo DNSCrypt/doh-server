@@ -150,6 +150,6 @@ There you have it. Your certificate hash is `3e1a1a0f6c53f3e97a492d57084b5b98070
 `doh-proxy` can be used with [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy)
 as a client.
 
-`doh-proxy` is currently being used by the `doh.crypto.sx` public DNS resolver.
+`doh-proxy` is used in production for the `doh.crypto.sx` public DNS resolver and many others.
 
 An extensive list of public DoH servers can be found here: [public encrypted DNS servers](https://github.com/DNSCrypt/dnscrypt-resolvers/blob/master/v2/public-resolvers.md).
