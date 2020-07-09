@@ -212,7 +212,11 @@ impl DoH {
             .header(hyper::header::CONTENT_TYPE, "application/dns-message")
             .header(
                 hyper::header::CACHE_CONTROL,
-                format!("max-age={}, stale-while-revalidate={}, stale-if-error={}", ttl, ttl, ttl).as_str(),
+                format!(
+                    "max-age={}, stale-if-error={}, stale-while-revalidate={}",
+                    ttl, STALE_IF_ERROR_SECS, STALE_WHILE_REVALIDATE_SECS
+                )
+                .as_str(),
             )
             .body(Body::from(packet))
             .unwrap();
