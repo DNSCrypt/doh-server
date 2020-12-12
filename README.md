@@ -6,7 +6,7 @@ A fast and secure DoH (DNS-over-HTTPS) server written in Rust.
 
 ### From source code
 
-This requires the `rust` compiler to be installed.
+This requires the [`rust`](https://rustup.rs) compiler to be installed.
 
 With built-in support for HTTPS (default):
 
