@@ -179,7 +179,7 @@ impl DoH {
         }
         let _ = dns::set_edns_max_payload_size(&mut query, MAX_DNS_RESPONSE_LEN as _);
         let globals = &self.globals;
-        let mut socket = UdpSocket::bind(&globals.local_bind_address)
+        let socket = UdpSocket::bind(&globals.local_bind_address)
             .await
             .map_err(DoHError::Io)?;
         let expected_server_address = globals.server_address;
@@ -245,15 +245,11 @@ impl DoH {
 
     async fn start_without_tls(
         self,
-        mut listener: TcpListener,
+        listener: TcpListener,
         server: Http<LocalExecutor>,
     ) -> Result<(), DoHError> {
         let listener_service = async {
-            while let Some(stream) = listener.incoming().next().await {
-                let stream = match stream {
-                    Ok(stream) => stream,
-                    Err(_) => continue,
-                };
+            while let Ok((stream, _client_addr)) = listener.accept().await {
                 self.clone().client_serve(stream, server.clone()).await;
             }
             Ok(()) as Result<(), DoHError>
