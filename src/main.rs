@@ -18,11 +18,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 fn main() {
-    let mut runtime_builder = tokio::runtime::Builder::new();
+    let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
     runtime_builder.enable_all();
-    runtime_builder.threaded_scheduler();
     runtime_builder.thread_name("doh-proxy");
-    let mut runtime = runtime_builder.build().unwrap();
+    let runtime = runtime_builder.build().unwrap();
 
     let mut globals = Globals {
         #[cfg(feature = "tls")]

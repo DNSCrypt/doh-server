@@ -11,7 +11,6 @@ use tokio_rustls::{
     rustls::{internal::pemfile, NoClientAuth, ServerConfig},
     TlsAcceptor,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub fn create_tls_acceptor<P, P2>(certs_path: P, certs_keys_path: P2) -> io::Result<TlsAcceptor>
 where
@@ -82,7 +81,7 @@ impl DoH {
     pub async fn start_with_tls(
         self,
         tls_acceptor: TlsAcceptor,
-        mut listener: TcpListener,
+        listener: TcpListener,
         server: Http<LocalExecutor>,
     ) -> Result<(), DoHError> {
         let listener_service = async {
