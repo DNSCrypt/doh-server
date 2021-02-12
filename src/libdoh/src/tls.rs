@@ -85,7 +85,7 @@ impl DoH {
         server: Http<LocalExecutor>,
     ) -> Result<(), DoHError> {
         let listener_service = async {
-            while let Ok((raw_stream, _client_addr)) = listener.accept().await {               
+            while let Ok((raw_stream, _client_addr)) = listener.accept().await {
                 let stream = match tls_acceptor.accept(raw_stream).await {
                     Ok(stream) => stream,
                     Err(_) => continue,

@@ -43,7 +43,11 @@ impl ClientsCount {
         let mut count;
         while {
             count = self.0.load(Ordering::Relaxed);
-            count > 0 && self.0.compare_and_swap(count, count - 1, Ordering::Relaxed) != count
+            count > 0
+                && self
+                    .0
+                    .compare_exchange(count, count - 1, Ordering::Relaxed, Ordering::Relaxed)
+                    != Ok(count)
         } {}
         count
     }
