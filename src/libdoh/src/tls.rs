@@ -79,6 +79,7 @@ where
         keys
     };
     let mut server_config = ServerConfig::new(NoClientAuth::new());
+    server_config.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
     let has_valid_cert_and_key = certs_keys.into_iter().any(|certs_key| {
         server_config
             .set_single_cert(certs.clone(), certs_key)
