@@ -61,6 +61,7 @@ where
                 "Unable to parse the certificates private keys (PKCS8)",
             )
         })?;
+        reader.set_position(0);
         let mut rsa_keys = pemfile::rsa_private_keys(&mut reader).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
