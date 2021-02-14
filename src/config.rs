@@ -160,7 +160,7 @@ pub fn parse_opts(globals: &mut Globals) {
 
     #[cfg(feature = "tls")]
     {
-        globals.tls_cert_path = matches.value_of("tls_cert_key_path").map(PathBuf::from);
+        globals.tls_cert_path = matches.value_of("tls_cert_path").map(PathBuf::from);
         globals.tls_cert_key_path = matches
             .value_of("tls_cert_key_path")
             .map(PathBuf::from)
