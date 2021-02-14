@@ -1,6 +1,6 @@
 [package]
 name = "libdoh"
-version = "0.3.6"
+version = "0.3.7"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "DoH library for the rust-doh app"
 keywords = ["dns","https","doh","proxy"]
