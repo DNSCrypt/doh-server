@@ -19,7 +19,7 @@ tls = ["libdoh/tls"]
 libdoh = { path = "src/libdoh", version = "0.3.7", default-features = false }
 clap = "2.33.3"
 jemallocator = "0.3.2"
-tokio = { version = "1.2.0", features = ["net", "rt-multi-thread", "parking_lot", "time"] }
+tokio = { version = "1.2.0", features = ["net", "rt-multi-thread", "parking_lot", "time", "sync"] }
 
 [package.metadata.deb]
 extended-description = """\

@@ -1,12 +1,13 @@
 use crate::errors::*;
 use crate::{DoH, LocalExecutor};
 
+use futures::{future::FutureExt, select};
 use hyper::server::conn::Http;
 use std::fs::File;
 use std::io::{self, BufReader, Cursor, Read};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::mpsc::Receiver};
 use tokio_rustls::{
     rustls::{internal::pemfile, NoClientAuth, ServerConfig},
     TlsAcceptor,
@@ -97,17 +98,31 @@ where
 impl DoH {
     pub async fn start_with_tls(
         self,
-        tls_acceptor: TlsAcceptor,
+        mut tls_acceptor_receiver: Receiver<TlsAcceptor>,
         listener: TcpListener,
         server: Http<LocalExecutor>,
     ) -> Result<(), DoHError> {
+        let mut tls_acceptor: Option<TlsAcceptor> = None;
         let listener_service = async {
-            while let Ok((raw_stream, _client_addr)) = listener.accept().await {
-                let stream = match tls_acceptor.accept(raw_stream).await {
-                    Ok(stream) => stream,
-                    Err(_) => continue,
-                };
-                self.clone().client_serve(stream, server.clone()).await;
+            loop {
+                select! {
+                    tcp_cnx = listener.accept().fuse() => {
+                        if tls_acceptor.is_none() || tcp_cnx.is_err() {
+                            continue;
+                        }
+                        let (raw_stream, _client_addr) = tcp_cnx.unwrap();
+                        if let Ok(stream) = tls_acceptor.as_ref().unwrap().accept(raw_stream).await {
+                            self.clone().client_serve(stream, server.clone()).await
+                        }
+                    }
+                    new_tls_acceptor = tls_acceptor_receiver.recv().fuse() => {
+                        if new_tls_acceptor.is_none() {
+                            break;
+                        }
+                        tls_acceptor = new_tls_acceptor;
+                    }
+                    complete => break
+                }
             }
             Ok(()) as Result<(), DoHError>
         };

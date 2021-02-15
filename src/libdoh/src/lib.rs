@@ -12,6 +12,7 @@ pub use crate::globals::*;
 #[cfg(feature = "tls")]
 use crate::tls::*;
 
+use futures::join;
 use futures::prelude::*;
 use futures::task::{Context, Poll};
 use hyper::http;
@@ -23,12 +24,14 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::runtime;
+use tokio::sync::mpsc;
 
 #[derive(Clone, Debug)]
 pub struct DoH {
     pub globals: Arc<Globals>,
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn http_error(status_code: StatusCode) -> Result<Response<Body>, http::Error> {
     let response = Response::builder()
         .status(status_code)
@@ -58,6 +61,7 @@ where
     }
 }
 
+#[allow(clippy::type_complexity)]
 impl hyper::service::Service<http::Request<Body>> for DoH {
     type Response = Response<Body>;
     type Error = http::Error;
@@ -265,17 +269,17 @@ impl DoH {
             .map_err(DoHError::Io)?;
         let path = &self.globals.path;
 
-        #[cfg(feature = "tls")]
-        let tls_acceptor = match (&self.globals.tls_cert_path, &self.globals.tls_cert_key_path) {
-            (Some(tls_cert_path), Some(tls_cert_key_path)) => {
-                Some(create_tls_acceptor(tls_cert_path, tls_cert_key_path).unwrap())
-            }
-            _ => None,
-        };
+        let tls_enabled: bool;
         #[cfg(not(feature = "tls"))]
-        let tls_acceptor: Option<()> = None;
-
-        if tls_acceptor.is_some() {
+        {
+            tls_enabled = false;
+        }
+        #[cfg(feature = "tls")]
+        {
+            tls_enabled =
+                self.globals.tls_cert_path.is_some() && self.globals.tls_cert_key_path.is_some();
+        }
+        if tls_enabled {
             println!("Listening on https://{}{}", listen_address, path);
         } else {
             println!("Listening on http://{}{}", listen_address, path);
@@ -289,9 +293,26 @@ impl DoH {
 
         #[cfg(feature = "tls")]
         {
-            if let Some(tls_acceptor) = tls_acceptor {
-                self.start_with_tls(tls_acceptor, listener, server).await?;
-                return Ok(());
+            if tls_enabled {
+                let certs_path = self.globals.tls_cert_path.as_ref().unwrap().clone();
+                let certs_keys_path = self.globals.tls_cert_key_path.as_ref().unwrap().clone();
+                let (tls_acceptor_sender, tls_acceptor_receiver) = mpsc::channel(1);
+                let http_service = self.start_with_tls(tls_acceptor_receiver, listener, server);
+                let cert_service = async {
+                    loop {
+                        match create_tls_acceptor(&certs_path, &certs_keys_path) {
+                            Ok(tls_acceptor) => {
+                                if tls_acceptor_sender.send(tls_acceptor).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => eprintln!("TLS certificates error: {}", e),
+                        }
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                    Ok::<_, DoHError>(())
+                };
+                return join!(http_service, cert_service).0;
             }
         }
         self.start_without_tls(listener, server).await?;
