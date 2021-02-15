@@ -1,3 +1,4 @@
+use crate::constants::CERTS_WATCH_DELAY_SECS;
 use crate::errors::*;
 use crate::{DoH, LocalExecutor};
 
@@ -153,7 +154,7 @@ impl DoH {
                     }
                     Err(e) => eprintln!("TLS certificates error: {}", e),
                 }
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                tokio::time::sleep(Duration::from_secs(CERTS_WATCH_DELAY_SECS.into())).await;
             }
             Ok::<_, DoHError>(())
         };
