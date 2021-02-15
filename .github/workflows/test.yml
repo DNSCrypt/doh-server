@@ -1,0 +1,23 @@
+name: Rust
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@master
+      - uses: hecrj/setup-rust-action@master
+        with:
+          rust-version: stable
+      - name: Check Cargo availability
+        run: cargo --version
+      - name: Check Rustup default toolchain
+        run: rustup default | grep stable
+      - name: Build without default features
+        run: |
+          env RUSTFLAGS="-C link-arg=-s" cargo check --no-default-features
+      - name: Build with default features
+        run: |
+          env RUSTFLAGS="-C link-arg=-s" cargo check
