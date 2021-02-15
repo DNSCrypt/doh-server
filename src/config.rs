@@ -14,6 +14,7 @@ pub fn parse_opts(globals: &mut Globals) {
 
     let max_clients = MAX_CLIENTS.to_string();
     let timeout_sec = TIMEOUT_SEC.to_string();
+    let max_concurrent_streams = MAX_CONCURRENT_STREAMS.to_string();
     let min_ttl = MIN_TTL.to_string();
     let max_ttl = MAX_TTL.to_string();
     let err_ttl = ERR_TTL.to_string();
@@ -61,6 +62,14 @@ pub fn parse_opts(globals: &mut Globals) {
                 .takes_value(true)
                 .default_value(&max_clients)
                 .help("Maximum number of simultaneous clients"),
+        )
+        .arg(
+            Arg::with_name("max_concurrent")
+                .short("C")
+                .long("max-concurrent")
+                .takes_value(true)
+                .default_value(&max_concurrent_streams)
+                .help("Maximum number of concurrent requests per client"),
         )
         .arg(
             Arg::with_name("timeout")
@@ -152,6 +161,7 @@ pub fn parse_opts(globals: &mut Globals) {
     }
     globals.max_clients = matches.value_of("max_clients").unwrap().parse().unwrap();
     globals.timeout = Duration::from_secs(matches.value_of("timeout").unwrap().parse().unwrap());
+    globals.max_concurrent_streams = matches.value_of("max_concurrent").unwrap().parse().unwrap();
     globals.min_ttl = matches.value_of("min_ttl").unwrap().parse().unwrap();
     globals.max_ttl = matches.value_of("max_ttl").unwrap().parse().unwrap();
     globals.err_ttl = matches.value_of("err_ttl").unwrap().parse().unwrap();

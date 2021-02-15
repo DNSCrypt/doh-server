@@ -36,6 +36,7 @@ fn main() {
         max_clients: MAX_CLIENTS,
         timeout: Duration::from_secs(TIMEOUT_SEC),
         clients_count: Default::default(),
+        max_concurrent_streams: MAX_CONCURRENT_STREAMS,
         min_ttl: MIN_TTL,
         max_ttl: MAX_TTL,
         err_ttl: ERR_TTL,

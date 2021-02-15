@@ -22,6 +22,7 @@ pub struct Globals {
     pub max_clients: usize,
     pub timeout: Duration,
     pub clients_count: ClientsCount,
+    pub max_concurrent_streams: u32,
     pub min_ttl: u32,
     pub max_ttl: u32,
     pub err_ttl: u32,

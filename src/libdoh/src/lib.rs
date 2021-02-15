@@ -287,6 +287,7 @@ impl DoH {
 
         let mut server = Http::new();
         server.http1_keep_alive(self.globals.keepalive);
+        server.http2_max_concurrent_streams(self.globals.max_concurrent_streams);
         server.pipeline_flush(true);
         let executor = LocalExecutor::new(self.globals.runtime_handle.clone());
         let server = server.with_executor(executor);
