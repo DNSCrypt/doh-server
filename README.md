@@ -23,6 +23,8 @@ cargo install doh-proxy --no-default-features
 ## Usage
 
 ```text
+A DNS-over-HTTPS (DoH) proxy
+
 USAGE:
     doh-proxy [FLAGS] [OPTIONS]
 
@@ -37,6 +39,7 @@ OPTIONS:
     -l, --listen-address <listen_address>            Address to listen to [default: 127.0.0.1:3000]
     -b, --local-bind-address <local_bind_address>    Address to connect from
     -c, --max-clients <max_clients>                  Maximum number of simultaneous clients [default: 512]
+    -C, --max-concurrent <max_concurrent>            Maximum number of concurrent requests per client [default: 16]
     -X, --max-ttl <max_ttl>                          Maximum TTL, in seconds [default: 604800]
     -T, --min-ttl <min_ttl>                          Minimum TTL, in seconds [default: 10]
     -p, --path <path>                                URI path [default: /dns-query]
@@ -45,7 +48,7 @@ OPTIONS:
     -I, --tls-cert-key-path <tls_cert_key_path>
             Path to the PEM-encoded secret keys (only required for built-in TLS)
 
-    -i, --tls-cert-path <tls_cert_path>              Path to a PEM-encoded identity (only required for built-in TLS)
+    -i, --tls-cert-path <tls_cert_path>              Path to the PEM-encoded certificates (only required for built-in TLS)
 ```
 
 ## HTTP/2 termination
@@ -66,6 +69,16 @@ Once HTTPS is enabled, HTTP connections will not be accepted.
 
 A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/rust-doh/raw/master/localhost.pem) can be used for testing.
 The file also includes the private key.
+
+[`acme.sh`](https://github.com/acmesh-official/acme.sh) can be used to create and update TLS certificates using Let's Encrypt and other ACME-compliant providers.
+
+The certificates path must be set to the full certificates chain (`fullchain.cer`) and the key path to the secret keys (the `.key` file):
+
+```sh
+doh-proxy -i /path/to/fullchain.cer -I /path/to/domain.key ...
+```
+
+Once started, `doh-proxy` automatically reloads the certificates as they change; there is no need to restart the server.
 
 ## Accepting both DNSCrypt and DoH connections on port 443
 

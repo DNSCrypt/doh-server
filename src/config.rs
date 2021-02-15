@@ -123,7 +123,7 @@ pub fn parse_opts(globals: &mut Globals) {
                 .short("i")
                 .long("tls-cert-path")
                 .takes_value(true)
-                .help("Path to a PEM-encoded certificates (only required for built-in TLS)"),
+                .help("Path to the PEM-encoded certificates (only required for built-in TLS)"),
         )
         .arg(
             Arg::with_name("tls_cert_key_path")
