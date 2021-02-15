@@ -1,13 +1,17 @@
 use crate::errors::*;
 use crate::{DoH, LocalExecutor};
 
-use futures::{future::FutureExt, select};
+use futures::{future::FutureExt, join, select};
 use hyper::server::conn::Http;
 use std::fs::File;
 use std::io::{self, BufReader, Cursor, Read};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::{net::TcpListener, sync::mpsc::Receiver};
+use std::time::Duration;
+use tokio::{
+    net::TcpListener,
+    sync::mpsc::{self, Receiver},
+};
 use tokio_rustls::{
     rustls::{internal::pemfile, NoClientAuth, ServerConfig},
     TlsAcceptor,
@@ -96,7 +100,7 @@ where
 }
 
 impl DoH {
-    pub async fn start_with_tls(
+    async fn start_https_service(
         self,
         mut tls_acceptor_receiver: Receiver<TlsAcceptor>,
         listener: TcpListener,
@@ -128,5 +132,31 @@ impl DoH {
         };
         listener_service.await?;
         Ok(())
+    }
+
+    pub async fn start_with_tls(
+        self,
+        listener: TcpListener,
+        server: Http<LocalExecutor>,
+    ) -> Result<(), DoHError> {
+        let certs_path = self.globals.tls_cert_path.as_ref().unwrap().clone();
+        let certs_keys_path = self.globals.tls_cert_key_path.as_ref().unwrap().clone();
+        let (tls_acceptor_sender, tls_acceptor_receiver) = mpsc::channel(1);
+        let https_service = self.start_https_service(tls_acceptor_receiver, listener, server);
+        let cert_service = async {
+            loop {
+                match create_tls_acceptor(&certs_path, &certs_keys_path) {
+                    Ok(tls_acceptor) => {
+                        if tls_acceptor_sender.send(tls_acceptor).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => eprintln!("TLS certificates error: {}", e),
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+            Ok::<_, DoHError>(())
+        };
+        return join!(https_service, cert_service).0;
     }
 }

@@ -9,10 +9,6 @@ use crate::constants::*;
 pub use crate::errors::*;
 pub use crate::globals::*;
 
-#[cfg(feature = "tls")]
-use crate::tls::*;
-
-use futures::join;
 use futures::prelude::*;
 use futures::task::{Context, Poll};
 use hyper::http;
@@ -24,7 +20,6 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::runtime;
-use tokio::sync::mpsc;
 
 pub mod reexports {
     pub use tokio;
@@ -299,25 +294,8 @@ impl DoH {
         #[cfg(feature = "tls")]
         {
             if tls_enabled {
-                let certs_path = self.globals.tls_cert_path.as_ref().unwrap().clone();
-                let certs_keys_path = self.globals.tls_cert_key_path.as_ref().unwrap().clone();
-                let (tls_acceptor_sender, tls_acceptor_receiver) = mpsc::channel(1);
-                let http_service = self.start_with_tls(tls_acceptor_receiver, listener, server);
-                let cert_service = async {
-                    loop {
-                        match create_tls_acceptor(&certs_path, &certs_keys_path) {
-                            Ok(tls_acceptor) => {
-                                if tls_acceptor_sender.send(tls_acceptor).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Err(e) => eprintln!("TLS certificates error: {}", e),
-                        }
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                    }
-                    Ok::<_, DoHError>(())
-                };
-                return join!(http_service, cert_service).0;
+                self.start_with_tls(listener, server).await?;
+                return Ok(());
             }
         }
         self.start_without_tls(listener, server).await?;
