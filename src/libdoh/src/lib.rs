@@ -26,6 +26,10 @@ use tokio::net::{TcpListener, UdpSocket};
 use tokio::runtime;
 use tokio::sync::mpsc;
 
+pub mod reexports {
+    pub use tokio;
+}
+
 #[derive(Clone, Debug)]
 pub struct DoH {
     pub globals: Arc<Globals>,

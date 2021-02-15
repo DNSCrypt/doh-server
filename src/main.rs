@@ -13,6 +13,7 @@ use libdoh::*;
 use crate::config::*;
 use crate::constants::*;
 
+use libdoh::reexports::tokio;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
