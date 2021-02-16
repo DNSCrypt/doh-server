@@ -1,6 +1,8 @@
 # doh-proxy
 
-A fast and secure DoH (DNS-over-HTTPS) server written in Rust.
+A fast and secure DoH (DNS-over-HTTPS) server.
+
+`doh-proxy` is written in Rust, and has been battle-tested in production since February 2018. It doesn't do DNS resolution on its own, but can sit in front of any DNS resolver in order to augment it with DoH support.
 
 ## Installation
 
@@ -71,7 +73,7 @@ In order to enable built-in HTTPS support, add the `--tls-cert-path` option to s
 
 Once HTTPS is enabled, HTTP connections will not be accepted.
 
-A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/rust-doh/raw/master/localhost.pem) can be used for testing.
+A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/doh-server/raw/master/localhost.pem) can be used for testing.
 The file also includes the private key.
 
 [`acme.sh`](https://github.com/acmesh-official/acme.sh) can be used to create and update TLS certificates using Let's Encrypt and other ACME-compliant providers.
@@ -90,11 +92,11 @@ DNSCrypt is an alternative encrypted DNS protocol that is faster and more lightw
 
 Both DNSCrypt and DoH connections can be accepted on the same TCP port using [Encrypted DNS Server](https://github.com/jedisct1/encrypted-dns-server).
 
-Encrypted DNS Server forwards DoH queries to Nginx or `rust-doh` when a TLS connection is detected, or directly responds to DNSCrypt queries.
+Encrypted DNS Server forwards DoH queries to Nginx or `doh-proxy` when a TLS connection is detected, or directly responds to DNSCrypt queries.
 
 It also provides DNS caching, server-side filtering, metrics, and TCP connection reuse in order to mitigate exhaustion attacks.
 
-Unless the front-end is a CDN, an ideal setup is to use `rust-doh` behind `Encrypted DNS Server`.
+Unless the front-end is a CDN, an ideal setup is to use `doh-proxy` behind `Encrypted DNS Server`.
 
 ## Operational recommendations
 
@@ -167,8 +169,7 @@ This [Go code snippet](https://gist.github.com/d6cb41742a1ceb54d48cc286f3d5c5fa)
 
 ## Clients
 
-`doh-proxy` can be used with [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy)
-as a client.
+`doh-proxy` can be used with [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy) as a client.
 
 `doh-proxy` is used in production for the `doh.crypto.sx` public DNS resolver and many others.
 
