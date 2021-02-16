@@ -4,17 +4,21 @@ A fast and secure DoH (DNS-over-HTTPS) server written in Rust.
 
 ## Installation
 
-### From source code
+### Option 1: precompiled binaries for Linux
+
+Precompiled tarballs and Debian packages for Linux/x86_64 [can be downloaded here](https://github.com/jedisct1/doh-server/releases/latest).
+
+### Option 2: from source code
 
 This requires the [`rust`](https://rustup.rs) compiler to be installed.
 
-With built-in support for HTTPS (default):
+* With built-in support for HTTPS (default):
 
 ```sh
 cargo install doh-proxy
 ```
 
-Without built-in support for HTTPS:
+* Without built-in support for HTTPS:
 
 ```sh
 cargo install doh-proxy --no-default-features
