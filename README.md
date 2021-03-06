@@ -69,7 +69,7 @@ If both are on distinct networks, such as when using a CDN, `doh-proxy` can hand
 
 The certificates and private keys must be encoded in PEM/PKCS#8 format. They can be stored in the same file.
 
-If your ECDSA private keys start with `-----BEGIN EC PRIVATE KEY-----` and not `-----BEGIN PRIVATE KEY-----`, convert them to PKCS#8 with (in this example, `example.key` is the original file):
+If you are using ECDSA certificates and ECDSA private keys start with `-----BEGIN EC PRIVATE KEY-----` and not `-----BEGIN PRIVATE KEY-----`, convert them to PKCS#8 with (in this example, `example.key` is the original file):
 
 ```sh
 openssl pkcs8 -topk8 -nocrypt -in example.key -out example.pkcs8.pem
@@ -82,7 +82,9 @@ Once HTTPS is enabled, HTTP connections will not be accepted.
 A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/doh-server/raw/master/localhost.pem) can be used for testing.
 The file also includes the private key.
 
-[`acme.sh`](https://github.com/acmesh-official/acme.sh) can be used to create and update TLS certificates using Let's Encrypt and other ACME-compliant providers. If you are using it to create ECDSA keys, see above for converting the secret key into PKCS#8..
+[`acme.sh`](https://github.com/acmesh-official/acme.sh) can be used to create and update TLS certificates using Let's Encrypt and other ACME-compliant providers. If you are using it to create ECDSA keys, see above for converting the secret key into PKCS#8.
+
+*WARNING*: Let's Encrypt ECDSA certificates are currently rejected by most clients. Stick to RSA.
 
 The certificates path must be set to the full certificates chain (`fullchain.cer`) and the key path to the secret keys (the `.key` file):
 
