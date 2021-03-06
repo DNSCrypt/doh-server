@@ -84,8 +84,6 @@ The file also includes the private key.
 
 [`acme.sh`](https://github.com/acmesh-official/acme.sh) can be used to create and update TLS certificates using Let's Encrypt and other ACME-compliant providers. If you are using it to create ECDSA keys, see above for converting the secret key into PKCS#8.
 
-*WARNING*: Let's Encrypt ECDSA certificates are currently rejected by most clients. Stick to RSA.
-
 The certificates path must be set to the full certificates chain (`fullchain.cer`) and the key path to the secret keys (the `.key` file):
 
 ```sh
