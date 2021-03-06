@@ -67,7 +67,7 @@ If `doh-proxy` and the HTTP/2 front-end run on the same host, using the HTTP pro
 
 If both are on distinct networks, such as when using a CDN, `doh-proxy` can handle HTTPS requests, provided that it was compiled with the `tls` feature.
 
-The certificates and private keys must be encoded in PEM format. They can be stored in the same file.
+The certificates and private keys must use RSA and have to be encoded in PEM format. They can be stored in the same file.
 
 In order to enable built-in HTTPS support, add the `--tls-cert-path` option to specify the location of the certificates file, as well as the private keys file using `--tls-cert-key-path`.
 
