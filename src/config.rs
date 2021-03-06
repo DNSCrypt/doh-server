@@ -22,6 +22,20 @@ pub fn parse_opts(globals: &mut Globals) {
     let _ = include_str!("../Cargo.toml");
     let options = app_from_crate!()
         .arg(
+            Arg::with_name("hostname")
+                .short("H")
+                .long("hostname")
+                .takes_value(true)
+                .help("Host name (not IP address) DoH clients will use to connect"),
+        )
+        .arg(
+            Arg::with_name("public_address")
+                .short("g")
+                .long("public-address")
+                .takes_value(true)
+                .help("External IP address DoH clients will connect to"),
+        )
+        .arg(
             Arg::with_name("listen_address")
                 .short("l")
                 .long("listen-address")
@@ -123,7 +137,9 @@ pub fn parse_opts(globals: &mut Globals) {
                 .short("i")
                 .long("tls-cert-path")
                 .takes_value(true)
-                .help("Path to the PEM-encoded certificates (only required for built-in TLS)"),
+                .help(
+                    "Path to the PEM/PKCS#8-encoded certificates (only required for built-in TLS)",
+                ),
         )
         .arg(
             Arg::with_name("tls_cert_key_path")
@@ -175,5 +191,19 @@ pub fn parse_opts(globals: &mut Globals) {
             .value_of("tls_cert_key_path")
             .map(PathBuf::from)
             .or_else(|| globals.tls_cert_path.clone());
+    }
+
+    if let Some(hostname) = matches.value_of("hostname") {
+        let mut builder =
+            dnsstamps::DoHBuilder::new(hostname.to_string(), globals.path.to_string());
+        if let Some(public_address) = matches.value_of("public_address") {
+            builder = builder.with_address(public_address.to_string());
+        }
+        println!(
+            "Test DNS stamp to reach [{}]: [{}]",
+            hostname,
+            builder.serialize().unwrap()
+        );
+        println!("Check out https://dnscrypt.info/stamps/ to compute the actual stamp.\n")
     }
 }

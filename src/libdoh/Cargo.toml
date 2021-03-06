@@ -18,7 +18,7 @@ tls = ["tokio-rustls"]
 anyhow = "1.0.38"
 byteorder = "1.4.2"
 base64 = "0.13.0"
-futures = "0.3.12"
+futures = "0.3.13"
 hyper = { version = "0.14.4", default-features = false, features = ["server", "http1", "http2", "stream"] }
 tokio = { version = "1.2.0", features = ["net", "rt-multi-thread", "parking_lot", "time", "sync"] }
 tokio-rustls = { version = "0.22.0", features = ["early-data"], optional = true }

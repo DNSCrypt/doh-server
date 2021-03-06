@@ -18,6 +18,7 @@ tls = ["libdoh/tls"]
 [dependencies]
 libdoh = { path = "src/libdoh", version = "0.3.8", default-features = false }
 clap = "2.33.3"
+dnsstamps = "0.1.5"
 jemallocator = "0.3.2"
 
 [package.metadata.deb]
