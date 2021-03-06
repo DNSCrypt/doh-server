@@ -82,7 +82,7 @@ Once HTTPS is enabled, HTTP connections will not be accepted.
 A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/doh-server/raw/master/localhost.pem) can be used for testing.
 The file also includes the private key.
 
-[`acme.sh`](https://github.com/acmesh-official/acme.sh) can be used to create and update TLS certificates using Let's Encrypt and other ACME-compliant providers.
+[`acme.sh`](https://github.com/acmesh-official/acme.sh) can be used to create and update TLS certificates using Let's Encrypt and other ACME-compliant providers. If you are using it to create ECDSA keys, see above for converting the secret key into PKCS#8..
 
 The certificates path must be set to the full certificates chain (`fullchain.cer`) and the key path to the secret keys (the `.key` file):
 
