@@ -69,10 +69,10 @@ If both are on distinct networks, such as when using a CDN, `doh-proxy` can hand
 
 The certificates and private keys must be encoded in PEM/PKCS#8 format. They can be stored in the same file.
 
-If your ECDSA private keys start with `-----BEGIN EC PRIVATE KEY-----` and not `-----BEGIN PRIVATE KEY-----`, convert them to PKCS#8 with:
+If your ECDSA private keys start with `-----BEGIN EC PRIVATE KEY-----` and not `-----BEGIN PRIVATE KEY-----`, convert them to PKCS#8 with (in this example, `example.key` is the original file):
 
 ```sh
-openssl pkcs8 -topk8 -nocrypt -in sec1.pem -out pkcs8.pem
+openssl pkcs8 -topk8 -nocrypt -in example.key -out example.pkcs8.pem
 ```
 
 In order to enable built-in HTTPS support, add the `--tls-cert-path` option to specify the location of the certificates file, as well as the private keys file using `--tls-cert-key-path`.
