@@ -92,6 +92,8 @@ doh-proxy -i /path/to/fullchain.cer -I /path/to/domain.key ...
 
 Once started, `doh-proxy` automatically reloads the certificates as they change; there is no need to restart the server.
 
+If clients are getting the `x509: certificate signed by unknown authority` error, double check that the certificate file is the full chain, not the other `.cer` file.
+
 ## Accepting both DNSCrypt and DoH connections on port 443
 
 DNSCrypt is an alternative encrypted DNS protocol that is faster and more lightweight than DoH.
