@@ -79,7 +79,7 @@ where
         if keys.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "No private keys found",
+                "No private keys found - Make sure that they are in PKCS#8/PEM format",
             ));
         }
         keys
