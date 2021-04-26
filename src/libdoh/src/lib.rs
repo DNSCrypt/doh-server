@@ -142,7 +142,6 @@ impl DoH {
         }
     }
 
-    // #[cfg(feature = "odoh")]
     async fn serve_odoh_post(&self, req:Request<Body>) -> Result<Response<Body>, http::Error> {
         let query_body = match self.read_body(req.into_body()).await {
             Ok(q) => q,
