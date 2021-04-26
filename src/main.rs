@@ -13,6 +13,7 @@ use libdoh::*;
 use crate::config::*;
 use crate::constants::*;
 
+use libdoh::odoh::ODoHPublicKey;
 use libdoh::reexports::tokio;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -23,6 +24,11 @@ fn main() {
     runtime_builder.enable_all();
     runtime_builder.thread_name("doh-proxy");
     let runtime = runtime_builder.build().unwrap();
+
+    let odoh_key = match ODoHPublicKey::new() {
+        Ok(key) => key,
+        Err(_) => panic!("Failed to generate ODoH public key configuration"),
+    };
 
     let mut globals = Globals {
         #[cfg(feature = "tls")]
@@ -43,6 +49,8 @@ fn main() {
         err_ttl: ERR_TTL,
         keepalive: true,
         disable_post: false,
+        odoh_configs_path: ODOH_CONFIGS_PATH.to_string(),
+        odoh_public_key: Arc::new(odoh_key),
 
         runtime_handle: runtime.handle().clone(),
     };

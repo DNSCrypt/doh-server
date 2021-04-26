@@ -1,3 +1,4 @@
+use crate::odoh::ODoHPublicKey;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -28,6 +29,8 @@ pub struct Globals {
     pub err_ttl: u32,
     pub keepalive: bool,
     pub disable_post: bool,
+    pub odoh_configs_path: String,
+    pub odoh_public_key: Arc<ODoHPublicKey>,
 
     pub runtime_handle: runtime::Handle,
 }
