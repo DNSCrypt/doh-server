@@ -148,9 +148,10 @@ impl DoH {
             Err(e) => return http_error(StatusCode::from(e))
         };
 
-        let (query, context) = match (*self.globals.odoh_public_key).clone().decrypt_query(query_body).await {
+        let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
+        let (query, context) = match (*odoh_public_key).clone().decrypt_query(query_body).await {
             Ok((q, context)) => (q.to_vec(), context),
-            Err(_) => return http_error(StatusCode::from(DoHError::InvalidData))
+            Err(e) => return http_error(StatusCode::from(e))
         };
 
         let resp_body = match self.proxy(query).await {
@@ -170,7 +171,8 @@ impl DoH {
     }
 
     async fn serve_odoh_configs(&self) -> Result<Response<Body>, http::Error> {
-        let configs = (*self.globals.odoh_public_key).clone().config();
+        let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
+        let configs = (*odoh_public_key).clone().config();
         match self.build_response(configs, 0, "application/octet-stream".to_string()) {
             Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),

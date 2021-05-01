@@ -1,11 +1,17 @@
+use crate::constants::ODOH_KEY_ROTATION_SECS;
 use crate::errors::DoHError;
+use std::sync::Arc;
+use arc_swap::ArcSwap;
+use std::time::Duration;
+use tokio::runtime;
 use hpke::kex::Serializable;
 use odoh_rs::key_utils::{derive_keypair_from_seed};
 use odoh_rs::protocol::{create_response_msg, 
     parse_received_query, RESPONSE_NONCE_SIZE, 
-    ObliviousDoHQueryBody, Serialize, 
+    ObliviousDoHQueryBody, Serialize, Deserialize,
     ObliviousDoHKeyPair, ObliviousDoHConfigContents, 
-    ObliviousDoHConfig, ObliviousDoHConfigs
+    ObliviousDoHConfig, ObliviousDoHConfigs,
+    ObliviousDoHMessage, ObliviousDoHMessageType,
 };
 use rand::Rng;
 use std::fmt;
@@ -72,6 +78,25 @@ impl ODoHPublicKey {
     }
 
     pub async fn decrypt_query(self, encrypted_query: Vec<u8>) -> Result<(Vec<u8>, ODoHQueryContext), DoHError> {
+        let odoh_query = match ObliviousDoHMessage::from_bytes(&encrypted_query) {
+            Ok(q) => {
+                if q.msg_type != ObliviousDoHMessageType::Query {
+                    return Err(DoHError::InvalidData);
+                }
+                q
+            },
+            Err(_) => return Err(DoHError::InvalidData)
+        };
+
+        match self.key.public_key.identifier() {
+            Ok(key_id) => {
+                if !key_id.eq(&odoh_query.key_id) {
+                    return Err(DoHError::StaleKey);
+                }
+            },
+            Err(_) => return Err(DoHError::InvalidData)
+        };
+
         let (query, server_secret) = match parse_received_query(&self.key, &encrypted_query).await {
             Ok((pq, ss)) => (pq, ss),
             Err(_) => return Err(DoHError::InvalidData)
@@ -92,5 +117,42 @@ impl ODoHQueryContext {
             .map_err(|_| {
                 DoHError::InvalidData
             })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ODoHRotator {
+    key: Arc<ArcSwap<ODoHPublicKey>>,
+}
+
+impl ODoHRotator {
+    pub fn new(runtime_handle: runtime::Handle) -> Result<ODoHRotator, DoHError> {
+        let odoh_key = match ODoHPublicKey::new() {
+            Ok(key) => Arc::new(ArcSwap::from_pointee(key)),
+            Err(e) => panic!("ODoH key rotation error: {}", e),
+        };
+
+        let current_key = Arc::clone(&odoh_key);
+
+        runtime_handle.clone().spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(ODOH_KEY_ROTATION_SECS.into())).await;
+                match ODoHPublicKey::new() {
+                    Ok(key) => {
+                        current_key.store(Arc::new(key));
+                    },
+                    Err(e) => eprintln!("ODoH key rotation error: {}", e),
+                };
+            }
+        });
+
+        Ok(ODoHRotator{
+            key: Arc::clone(&odoh_key)
+        })
+    }
+
+    pub fn current_key(&self) -> Arc<ODoHPublicKey> {
+        let key = Arc::clone(&self.key);
+        Arc::clone(&key.load())
     }
 }

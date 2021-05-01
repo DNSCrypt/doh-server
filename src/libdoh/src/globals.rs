@@ -1,4 +1,4 @@
-use crate::odoh::ODoHPublicKey;
+use crate::odoh::ODoHRotator;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -30,7 +30,7 @@ pub struct Globals {
     pub keepalive: bool,
     pub disable_post: bool,
     pub odoh_configs_path: String,
-    pub odoh_public_key: Arc<ODoHPublicKey>,
+    pub odoh_rotator: Arc<ODoHRotator>,
 
     pub runtime_handle: runtime::Handle,
 }

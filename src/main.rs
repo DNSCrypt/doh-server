@@ -13,7 +13,7 @@ use libdoh::*;
 use crate::config::*;
 use crate::constants::*;
 
-use libdoh::odoh::ODoHPublicKey;
+use libdoh::odoh::ODoHRotator;
 use libdoh::reexports::tokio;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -25,9 +25,9 @@ fn main() {
     runtime_builder.thread_name("doh-proxy");
     let runtime = runtime_builder.build().unwrap();
 
-    let odoh_key = match ODoHPublicKey::new() {
-        Ok(key) => key,
-        Err(_) => panic!("Failed to generate ODoH public key configuration"),
+    let rotator = match ODoHRotator::new(runtime.handle().clone()) {
+        Ok(r) => r,
+        Err(_) => panic!("Failed to create ODoHRotator"),
     };
 
     let mut globals = Globals {
@@ -50,7 +50,7 @@ fn main() {
         keepalive: true,
         disable_post: false,
         odoh_configs_path: ODOH_CONFIGS_PATH.to_string(),
-        odoh_public_key: Arc::new(odoh_key),
+        odoh_rotator: Arc::new(rotator),
 
         runtime_handle: runtime.handle().clone(),
     };

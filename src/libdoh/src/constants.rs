@@ -5,3 +5,4 @@ pub const MIN_DNS_PACKET_LEN: usize = 17;
 pub const STALE_IF_ERROR_SECS: u32 = 86400;
 pub const STALE_WHILE_REVALIDATE_SECS: u32 = 60;
 pub const CERTS_WATCH_DELAY_SECS: u32 = 10;
+pub const ODOH_KEY_ROTATION_SECS: u32 = 86400;
