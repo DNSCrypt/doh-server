@@ -1,5 +1,6 @@
 mod constants;
 pub mod dns;
+pub mod odoh;
 mod errors;
 mod globals;
 #[cfg(feature = "tls")]
@@ -26,8 +27,29 @@ pub mod reexports {
 }
 
 #[derive(Clone, Debug)]
+struct DnsResponse {
+    packet: Vec<u8>,
+    ttl: u32,
+}
+
+#[derive(Clone, Debug)]
+enum DoHType {
+    Standard,
+    Oblivious,
+}
+
+impl DoHType {
+    fn as_str(&self) -> String {
+        match self {
+            DoHType::Standard => String::from("application/dns-message"),
+            DoHType::Oblivious => String::from("application/oblivious-dns-message"),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct DoH {
-    pub globals: Arc<Globals>,
+    pub globals: Arc<Globals>
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -72,14 +94,20 @@ impl hyper::service::Service<http::Request<Body>> for DoH {
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let globals = &self.globals;
-        if req.uri().path() != globals.path {
-            return Box::pin(async { http_error(StatusCode::NOT_FOUND) });
-        }
         let self_inner = self.clone();
-        match *req.method() {
-            Method::POST => Box::pin(async move { self_inner.serve_post(req).await }),
-            Method::GET => Box::pin(async move { self_inner.serve_get(req).await }),
-            _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
+        if req.uri().path() == globals.path {
+            match *req.method() {
+                Method::POST => Box::pin(async move { self_inner.serve_post(req).await }),
+                Method::GET => Box::pin(async move { self_inner.serve_get(req).await }),
+                _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
+            }
+        } else if req.uri().path() == globals.odoh_configs_path {
+            match *req.method() {
+                Method::GET => Box::pin(async move { self_inner.serve_odoh_configs().await }),
+                _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
+            }
+        } else {
+            Box::pin(async { http_error(StatusCode::NOT_FOUND) })
         }
     }
 }
@@ -89,12 +117,65 @@ impl DoH {
         if self.globals.disable_post {
             return http_error(StatusCode::METHOD_NOT_ALLOWED);
         }
-        if let Err(response) = Self::check_content_type(&req) {
-            return Ok(response);
+
+        match Self::parse_content_type(&req) {
+            Ok(DoHType::Standard) => self.serve_doh_post(req).await,
+            Ok(DoHType::Oblivious) => self.serve_odoh_post(req).await,
+            Err(response) => return Ok(response)
         }
-        match self.read_body_and_proxy(req.into_body()).await {
+    }
+
+    async fn serve_doh_post(&self, req:Request<Body>) -> Result<Response<Body>, http::Error> {
+        let query = match self.read_body(req.into_body()).await {
+            Ok(q) => q,
+            Err(e) => return http_error(StatusCode::from(e))
+        };
+
+        let resp = match self.proxy(query).await {
+            Ok(resp) => self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str()),
+            Err(e) => return http_error(StatusCode::from(e)),
+        };
+
+        match resp {
+            Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),
-            Ok(res) => Ok(res),
+        }
+    }
+
+    async fn serve_odoh_post(&self, req:Request<Body>) -> Result<Response<Body>, http::Error> {
+        let query_body = match self.read_body(req.into_body()).await {
+            Ok(q) => q,
+            Err(e) => return http_error(StatusCode::from(e))
+        };
+
+        let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
+        let (query, context) = match (*odoh_public_key).clone().decrypt_query(query_body).await {
+            Ok((q, context)) => (q.to_vec(), context),
+            Err(e) => return http_error(StatusCode::from(e))
+        };
+
+        let resp_body = match self.proxy(query).await {
+            Ok(resp) => resp,
+            Err(e) => return http_error(StatusCode::from(e))
+        };
+
+        let resp = match context.encrypt_response(resp_body.packet).await {
+            Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str()),
+            Err(e) => return http_error(StatusCode::from(e)),
+        };
+
+        match resp {
+            Ok(resp) => Ok(resp),
+            Err(e) => http_error(StatusCode::from(e)),
+        }
+    }
+
+    async fn serve_odoh_configs(&self) -> Result<Response<Body>, http::Error> {
+        let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
+        let configs = (*odoh_public_key).clone().config();
+        match self.build_response(configs, 0, "application/octet-stream".to_string()) {
+            Ok(resp) => Ok(resp),
+            Err(e) => http_error(StatusCode::from(e)),
         }
     }
 
@@ -117,13 +198,18 @@ impl DoH {
                 return http_error(StatusCode::BAD_REQUEST);
             }
         };
-        match self.proxy(question).await {
+
+        let resp = match self.proxy(question).await {
+            Ok(dns_resp) => self.build_response(dns_resp.packet, dns_resp.ttl, DoHType::Standard.as_str()),
+            Err(e) => Err(e),
+        };
+        match resp {
+            Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),
-            Ok(res) => Ok(res),
         }
     }
 
-    fn check_content_type(req: &Request<Body>) -> Result<(), Response<Body>> {
+    fn parse_content_type(req: &Request<Body>) -> Result<DoHType, Response<Body>> {
         let headers = req.headers();
         let content_type = match headers.get(hyper::header::CONTENT_TYPE) {
             None => {
@@ -145,17 +231,21 @@ impl DoH {
             }
             Ok(content_type) => content_type.to_lowercase(),
         };
-        if content_type != "application/dns-message" {
-            let response = Response::builder()
-                .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
-                .body(Body::empty())
-                .unwrap();
-            return Err(response);
+
+        match content_type.as_str() {
+            "application/dns-message" => Ok(DoHType::Standard),
+            "application/oblivious-dns-message" => Ok(DoHType::Oblivious),
+            _ => {
+                let response = Response::builder()
+                    .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+                    .body(Body::empty())
+                    .unwrap();
+                return Err(response);
+            }
         }
-        Ok(())
     }
 
-    async fn read_body_and_proxy(&self, mut body: Body) -> Result<Response<Body>, DoHError> {
+    async fn read_body(&self, mut body: Body) -> Result<Vec<u8>, DoHError> {
         let mut sum_size = 0;
         let mut query = vec![];
         while let Some(chunk) = body.next().await {
@@ -166,17 +256,16 @@ impl DoH {
             }
             query.extend(chunk);
         }
-        let response = self.proxy(query).await?;
-        Ok(response)
+        Ok(query)
     }
 
-    async fn proxy(&self, query: Vec<u8>) -> Result<Response<Body>, DoHError> {
+    async fn proxy(&self, query: Vec<u8>) -> Result<DnsResponse, DoHError> {
         let proxy_timeout = self.globals.timeout;
         let timeout_res = tokio::time::timeout(proxy_timeout, self._proxy(query)).await;
         timeout_res.map_err(|_| DoHError::UpstreamTimeout)?
     }
 
-    async fn _proxy(&self, mut query: Vec<u8>) -> Result<Response<Body>, DoHError> {
+    async fn _proxy(&self, mut query: Vec<u8>) -> Result<DnsResponse, DoHError> {
         if query.len() < MIN_DNS_PACKET_LEN {
             return Err(DoHError::Incomplete);
         }
@@ -209,10 +298,17 @@ impl DoH {
         dns::add_edns_padding(&mut packet)
             .map_err(|_| DoHError::TooLarge)
             .ok();
+        Ok(DnsResponse{
+            packet,
+            ttl,
+        })
+    }
+
+    fn build_response(&self, packet: Vec<u8>, ttl: u32, content_type: String) -> Result<Response<Body>, DoHError> {
         let packet_len = packet.len();
         let response = Response::builder()
             .header(hyper::header::CONTENT_LENGTH, packet_len)
-            .header(hyper::header::CONTENT_TYPE, "application/dns-message")
+            .header(hyper::header::CONTENT_TYPE, content_type.as_str())
             .header(
                 hyper::header::CACHE_CONTROL,
                 format!(

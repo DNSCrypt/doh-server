@@ -9,6 +9,7 @@ pub enum DoHError {
     TooLarge,
     UpstreamIssue,
     UpstreamTimeout,
+    StaleKey,
     Hyper(hyper::Error),
     Io(io::Error),
 }
@@ -23,6 +24,7 @@ impl std::fmt::Display for DoHError {
             DoHError::TooLarge => write!(fmt, "Too large"),
             DoHError::UpstreamIssue => write!(fmt, "Upstream error"),
             DoHError::UpstreamTimeout => write!(fmt, "Upstream timeout"),
+            DoHError::StaleKey => write!(fmt, "Stale key material"),
             DoHError::Hyper(e) => write!(fmt, "HTTP error: {}", e),
             DoHError::Io(e) => write!(fmt, "IO error: {}", e),
         }
@@ -37,6 +39,7 @@ impl From<DoHError> for StatusCode {
             DoHError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             DoHError::UpstreamIssue => StatusCode::BAD_GATEWAY,
             DoHError::UpstreamTimeout => StatusCode::BAD_GATEWAY,
+            DoHError::StaleKey => StatusCode::UNAUTHORIZED,
             DoHError::Hyper(_) => StatusCode::SERVICE_UNAVAILABLE,
             DoHError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
