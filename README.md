@@ -165,18 +165,20 @@ Go back to the online DNS stamp calculator, and copy&paste the hash (in this exa
 If you are using Let's Encrypt, the last line is likely to be:
 
 ```text
-Advertised cert: [CN=Let's Encrypt Authority X3,O=Let's Encrypt,C=US] [3e1a1a0f6c53f3e97a492d57084b5b9807059ee057ab1505876fd83fda3db838]
+Advertised cert: [CN=Let's Encrypt Authority R3,O=Let's Encrypt,C=US] [444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce]
 ```
 
-There you have it. Your certificate hash is `3e1a1a0f6c53f3e97a492d57084b5b9807059ee057ab1505876fd83fda3db838`.
+There you have it. Your certificate hash is `444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce`.
 
 This [Go code snippet](https://gist.github.com/d6cb41742a1ceb54d48cc286f3d5c5fa) can also compute the hash of certificates given a `.der` file.
 
 ### Common certificate hashes
 
-* Let's Encrypt X3: `3e1a1a0f6c53f3e97a492d57084b5b9807059ee057ab1505876fd83fda3db838`
-* Let's Encrypt R3: `3286ff65a65faf32085eea1388c3738ba7e37873c906cce3c4a28b4cc2a58988`
-* Let's Encrypt E1: `cc1060d39c8329b62b6fbc7d0d6df9309869b981e7e6392d5cd8fa408f4d80e6`
+* Let's Encrypt R3:
+  * `3286ff65a65faf32085eea1388c3738ba7e37873c906cce3c4a28b4cc2a58988` and
+  * `444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce`
+* Let's Encrypt E1:
+  * `cc1060d39c8329b62b6fbc7d0d6df9309869b981e7e6392d5cd8fa408f4d80e6`
 
 ## Clients
 
