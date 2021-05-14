@@ -1,8 +1,8 @@
 mod constants;
 pub mod dns;
-pub mod odoh;
 mod errors;
 mod globals;
+pub mod odoh;
 #[cfg(feature = "tls")]
 mod tls;
 
@@ -49,7 +49,7 @@ impl DoHType {
 
 #[derive(Clone, Debug)]
 pub struct DoH {
-    pub globals: Arc<Globals>
+    pub globals: Arc<Globals>,
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -121,14 +121,14 @@ impl DoH {
         match Self::parse_content_type(&req) {
             Ok(DoHType::Standard) => self.serve_doh_post(req).await,
             Ok(DoHType::Oblivious) => self.serve_odoh_post(req).await,
-            Err(response) => return Ok(response)
+            Err(response) => return Ok(response),
         }
     }
 
-    async fn serve_doh_post(&self, req:Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
         let query = match self.read_body(req.into_body()).await {
             Ok(q) => q,
-            Err(e) => return http_error(StatusCode::from(e))
+            Err(e) => return http_error(StatusCode::from(e)),
         };
 
         let resp = match self.proxy(query).await {
@@ -142,21 +142,21 @@ impl DoH {
         }
     }
 
-    async fn serve_odoh_post(&self, req:Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_odoh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
         let query_body = match self.read_body(req.into_body()).await {
             Ok(q) => q,
-            Err(e) => return http_error(StatusCode::from(e))
+            Err(e) => return http_error(StatusCode::from(e)),
         };
 
         let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
         let (query, context) = match (*odoh_public_key).clone().decrypt_query(query_body).await {
             Ok((q, context)) => (q.to_vec(), context),
-            Err(e) => return http_error(StatusCode::from(e))
+            Err(e) => return http_error(StatusCode::from(e)),
         };
 
         let resp_body = match self.proxy(query).await {
             Ok(resp) => resp,
-            Err(e) => return http_error(StatusCode::from(e))
+            Err(e) => return http_error(StatusCode::from(e)),
         };
 
         let resp = match context.encrypt_response(resp_body.packet).await {
@@ -200,7 +200,9 @@ impl DoH {
         };
 
         let resp = match self.proxy(question).await {
-            Ok(dns_resp) => self.build_response(dns_resp.packet, dns_resp.ttl, DoHType::Standard.as_str()),
+            Ok(dns_resp) => {
+                self.build_response(dns_resp.packet, dns_resp.ttl, DoHType::Standard.as_str())
+            }
             Err(e) => Err(e),
         };
         match resp {
@@ -298,13 +300,15 @@ impl DoH {
         dns::add_edns_padding(&mut packet)
             .map_err(|_| DoHError::TooLarge)
             .ok();
-        Ok(DnsResponse{
-            packet,
-            ttl,
-        })
+        Ok(DnsResponse { packet, ttl })
     }
 
-    fn build_response(&self, packet: Vec<u8>, ttl: u32, content_type: String) -> Result<Response<Body>, DoHError> {
+    fn build_response(
+        &self,
+        packet: Vec<u8>,
+        ttl: u32,
+        content_type: String,
+    ) -> Result<Response<Body>, DoHError> {
         let packet_len = packet.len();
         let response = Response::builder()
             .header(hyper::header::CONTENT_LENGTH, packet_len)

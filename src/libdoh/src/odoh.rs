@@ -1,20 +1,18 @@
 use crate::constants::ODOH_KEY_ROTATION_SECS;
 use crate::errors::DoHError;
-use std::sync::Arc;
 use arc_swap::ArcSwap;
-use std::time::Duration;
-use tokio::runtime;
 use hpke::kex::Serializable;
-use odoh_rs::key_utils::{derive_keypair_from_seed};
-use odoh_rs::protocol::{create_response_msg, 
-    parse_received_query, RESPONSE_NONCE_SIZE, 
-    ObliviousDoHQueryBody, Serialize, Deserialize,
-    ObliviousDoHKeyPair, ObliviousDoHConfigContents, 
-    ObliviousDoHConfig, ObliviousDoHConfigs,
-    ObliviousDoHMessage, ObliviousDoHMessageType,
+use odoh_rs::key_utils::derive_keypair_from_seed;
+use odoh_rs::protocol::{
+    create_response_msg, parse_received_query, Deserialize, ObliviousDoHConfig,
+    ObliviousDoHConfigContents, ObliviousDoHConfigs, ObliviousDoHKeyPair, ObliviousDoHMessage,
+    ObliviousDoHMessageType, ObliviousDoHQueryBody, Serialize, RESPONSE_NONCE_SIZE,
 };
 use rand::Rng;
 use std::fmt;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::runtime;
 
 // https://cfrg.github.io/draft-irtf-cfrg-hpke/draft-irtf-cfrg-hpke.html#name-algorithm-identifiers
 const DEFAULT_HPKE_SEED_SIZE: usize = 32;
@@ -45,9 +43,9 @@ fn generate_key_pair() -> ObliviousDoHKeyPair {
     let (secret_key, public_key) = derive_keypair_from_seed(&ikm);
     let public_key_bytes = public_key.to_bytes().to_vec();
     let odoh_public_key = ObliviousDoHConfigContents {
-        kem_id: DEFAULT_HPKE_KEM,  
-        kdf_id: DEFAULT_HPKE_KDF,  
-        aead_id: DEFAULT_HPKE_AEAD, 
+        kem_id: DEFAULT_HPKE_KEM,
+        kdf_id: DEFAULT_HPKE_KDF,
+        aead_id: DEFAULT_HPKE_AEAD,
         public_key: public_key_bytes,
     };
     ObliviousDoHKeyPair {
@@ -56,10 +54,11 @@ fn generate_key_pair() -> ObliviousDoHKeyPair {
     }
 }
 
-impl ODoHPublicKey {    
+impl ODoHPublicKey {
     pub fn new() -> Result<ODoHPublicKey, DoHError> {
         let key_pair = generate_key_pair();
-        let config = ObliviousDoHConfig::new(&key_pair.public_key.clone().to_bytes().unwrap()).unwrap();
+        let config =
+            ObliviousDoHConfig::new(&key_pair.public_key.clone().to_bytes().unwrap()).unwrap();
         let serialized_configs = ObliviousDoHConfigs {
             configs: vec![config.clone()],
         }
@@ -67,9 +66,9 @@ impl ODoHPublicKey {
         .unwrap()
         .to_vec();
 
-        Ok(ODoHPublicKey{
+        Ok(ODoHPublicKey {
             key: key_pair,
-            serialized_configs: serialized_configs
+            serialized_configs: serialized_configs,
         })
     }
 
@@ -77,15 +76,18 @@ impl ODoHPublicKey {
         self.serialized_configs
     }
 
-    pub async fn decrypt_query(self, encrypted_query: Vec<u8>) -> Result<(Vec<u8>, ODoHQueryContext), DoHError> {
+    pub async fn decrypt_query(
+        self,
+        encrypted_query: Vec<u8>,
+    ) -> Result<(Vec<u8>, ODoHQueryContext), DoHError> {
         let odoh_query = match ObliviousDoHMessage::from_bytes(&encrypted_query) {
             Ok(q) => {
                 if q.msg_type != ObliviousDoHMessageType::Query {
                     return Err(DoHError::InvalidData);
                 }
                 q
-            },
-            Err(_) => return Err(DoHError::InvalidData)
+            }
+            Err(_) => return Err(DoHError::InvalidData),
         };
 
         match self.key.public_key.identifier() {
@@ -93,15 +95,15 @@ impl ODoHPublicKey {
                 if !key_id.eq(&odoh_query.key_id) {
                     return Err(DoHError::StaleKey);
                 }
-            },
-            Err(_) => return Err(DoHError::InvalidData)
+            }
+            Err(_) => return Err(DoHError::InvalidData),
         };
 
         let (query, server_secret) = match parse_received_query(&self.key, &encrypted_query).await {
             Ok((pq, ss)) => (pq, ss),
-            Err(_) => return Err(DoHError::InvalidData)
+            Err(_) => return Err(DoHError::InvalidData),
         };
-        let context = ODoHQueryContext{
+        let context = ODoHQueryContext {
             query: query.clone(),
             secret: server_secret,
         };
@@ -112,11 +114,15 @@ impl ODoHPublicKey {
 impl ODoHQueryContext {
     pub async fn encrypt_response(self, response_body: Vec<u8>) -> Result<Vec<u8>, DoHError> {
         let response_nonce = rand::thread_rng().gen::<[u8; RESPONSE_NONCE_SIZE]>();
-        create_response_msg(&self.secret, &response_body, None, Some(response_nonce.to_vec()), &self.query)
-            .await
-            .map_err(|_| {
-                DoHError::InvalidData
-            })
+        create_response_msg(
+            &self.secret,
+            &response_body,
+            None,
+            Some(response_nonce.to_vec()),
+            &self.query,
+        )
+        .await
+        .map_err(|_| DoHError::InvalidData)
     }
 }
 
@@ -140,14 +146,14 @@ impl ODoHRotator {
                 match ODoHPublicKey::new() {
                     Ok(key) => {
                         current_key.store(Arc::new(key));
-                    },
+                    }
                     Err(e) => eprintln!("ODoH key rotation error: {}", e),
                 };
             }
         });
 
-        Ok(ODoHRotator{
-            key: Arc::clone(&odoh_key)
+        Ok(ODoHRotator {
+            key: Arc::clone(&odoh_key),
         })
     }
 
