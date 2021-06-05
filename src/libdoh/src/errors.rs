@@ -12,6 +12,7 @@ pub enum DoHError {
     StaleKey,
     Hyper(hyper::Error),
     Io(io::Error),
+    ODoHConfigError(anyhow::Error),
 }
 
 impl std::error::Error for DoHError {}
@@ -27,6 +28,7 @@ impl std::fmt::Display for DoHError {
             DoHError::StaleKey => write!(fmt, "Stale key material"),
             DoHError::Hyper(e) => write!(fmt, "HTTP error: {}", e),
             DoHError::Io(e) => write!(fmt, "IO error: {}", e),
+            DoHError::ODoHConfigError(e) => write!(fmt, "ODoH config error: {}", e),
         }
     }
 }
@@ -42,6 +44,7 @@ impl From<DoHError> for StatusCode {
             DoHError::StaleKey => StatusCode::UNAUTHORIZED,
             DoHError::Hyper(_) => StatusCode::SERVICE_UNAVAILABLE,
             DoHError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            DoHError::ODoHConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

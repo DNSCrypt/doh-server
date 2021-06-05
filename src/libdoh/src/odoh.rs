@@ -57,13 +57,20 @@ fn generate_key_pair() -> ObliviousDoHKeyPair {
 impl ODoHPublicKey {
     pub fn new() -> Result<ODoHPublicKey, DoHError> {
         let key_pair = generate_key_pair();
-        let config =
-            ObliviousDoHConfig::new(&key_pair.public_key.clone().to_bytes().unwrap()).unwrap();
+        let config = ObliviousDoHConfig::new(
+            &key_pair
+                .public_key
+                .clone()
+                .to_bytes()
+                .map_err(|e| DoHError::ODoHConfigError(e))?,
+        )
+        .map_err(|e| DoHError::ODoHConfigError(e))?;
+
         let serialized_configs = ObliviousDoHConfigs {
             configs: vec![config.clone()],
         }
         .to_bytes()
-        .unwrap()
+        .map_err(|e| DoHError::ODoHConfigError(e))?
         .to_vec();
 
         Ok(ODoHPublicKey {
