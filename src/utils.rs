@@ -1,6 +1,7 @@
+// functions to verify the startup arguments as correct
+
 use std::net::{SocketAddr, ToSocketAddrs};
 
-// functions to verify the startup arguments as correct
 pub(crate) fn verify_sock_addr(arg_val: String) -> Result<(), String> {
     match arg_val.parse::<SocketAddr>() {
         Ok(_addr) => Ok(()),
