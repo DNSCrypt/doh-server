@@ -49,6 +49,7 @@ fn main() {
         err_ttl: ERR_TTL,
         keepalive: true,
         disable_post: false,
+        allow_odoh_post: false,
         odoh_configs_path: ODOH_CONFIGS_PATH.to_string(),
         odoh_rotator: Arc::new(rotator),
 

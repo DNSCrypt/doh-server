@@ -29,6 +29,7 @@ pub struct Globals {
     pub err_ttl: u32,
     pub keepalive: bool,
     pub disable_post: bool,
+    pub allow_odoh_post: bool,
     pub odoh_configs_path: String,
     pub odoh_rotator: Arc<ODoHRotator>,
 

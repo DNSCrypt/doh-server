@@ -128,6 +128,12 @@ pub fn parse_opts(globals: &mut Globals) {
                 .short("P")
                 .long("disable-post")
                 .help("Disable POST queries"),
+        )
+        .arg(
+            Arg::with_name("allow_odoh_post")
+                .short("O")
+                .long("allow-odoh-post")
+                .help("Allow POST queries over ODoH even with they have been disabed for DoH"),
         );
 
     #[cfg(feature = "tls")]
@@ -183,6 +189,7 @@ pub fn parse_opts(globals: &mut Globals) {
     globals.err_ttl = matches.value_of("err_ttl").unwrap().parse().unwrap();
     globals.keepalive = !matches.is_present("disable_keepalive");
     globals.disable_post = matches.is_present("disable_post");
+    globals.allow_odoh_post = matches.is_present("allow_odoh_post");
 
     #[cfg(feature = "tls")]
     {

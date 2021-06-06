@@ -122,10 +122,6 @@ impl DoH {
     }
 
     async fn serve_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        if self.globals.disable_post {
-            return http_error(StatusCode::METHOD_NOT_ALLOWED);
-        }
-
         match Self::parse_content_type(&req) {
             Ok(DoHType::Standard) => self.serve_doh_post(req).await,
             Ok(DoHType::Oblivious) => self.serve_odoh_post(req).await,
@@ -178,6 +174,9 @@ impl DoH {
     }
 
     async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        if self.globals.disable_post {
+            return http_error(StatusCode::METHOD_NOT_ALLOWED);
+        }
         let query = match self.read_body(req.into_body()).await {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
@@ -221,6 +220,9 @@ impl DoH {
     }
 
     async fn serve_odoh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        if self.globals.disable_post && !self.globals.allow_odoh_post {
+            return http_error(StatusCode::METHOD_NOT_ALLOWED);
+        }
         let encrypted_query = match self.read_body(req.into_body()).await {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
