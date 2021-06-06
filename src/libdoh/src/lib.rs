@@ -125,46 +125,74 @@ impl DoH {
         }
     }
 
-    async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        let query = match self.read_body(req.into_body()).await {
-            Ok(q) => q,
-            Err(e) => return http_error(StatusCode::from(e)),
-        };
-
+    async fn _serve_doh_query(&self, query: Vec<u8>) -> Result<Response<Body>, http::Error> {
         let resp = match self.proxy(query).await {
             Ok(resp) => self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str()),
             Err(e) => return http_error(StatusCode::from(e)),
         };
-
         match resp {
             Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),
         }
     }
 
+    async fn serve_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        let http_query = req.uri().query().unwrap_or("");
+        let mut question_str = None;
+        for parts in http_query.split('&') {
+            let mut kv = parts.split('=');
+            if let Some(k) = kv.next() {
+                if k == DNS_QUERY_PARAM {
+                    question_str = kv.next();
+                }
+            }
+        }
+        let query = match question_str.and_then(|question_str| {
+            base64::decode_config(question_str, base64::URL_SAFE_NO_PAD).ok()
+        }) {
+            Some(query) => query,
+            _ => {
+                return http_error(StatusCode::BAD_REQUEST);
+            }
+        };
+        self._serve_doh_query(query).await
+    }
+
+    async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        let query = match self.read_body(req.into_body()).await {
+            Ok(q) => q,
+            Err(e) => return http_error(StatusCode::from(e)),
+        };
+        self._serve_doh_query(query).await
+    }
+
     async fn serve_odoh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        let query_body = match self.read_body(req.into_body()).await {
+        let encrypted_query = match self.read_body(req.into_body()).await {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
         };
 
         let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
-        let (query, context) = match (*odoh_public_key).clone().decrypt_query(query_body).await {
+        let (query, context) = match (*odoh_public_key)
+            .clone()
+            .decrypt_query(encrypted_query)
+            .await
+        {
             Ok((q, context)) => (q.to_vec(), context),
             Err(e) => return http_error(StatusCode::from(e)),
         };
 
-        let resp_body = match self.proxy(query).await {
+        let resp = match self.proxy(query).await {
             Ok(resp) => resp,
             Err(e) => return http_error(StatusCode::from(e)),
         };
 
-        let resp = match context.encrypt_response(resp_body.packet).await {
+        let encrypted_resp = match context.encrypt_response(resp.packet).await {
             Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str()),
             Err(e) => return http_error(StatusCode::from(e)),
         };
 
-        match resp {
+        match encrypted_resp {
             Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),
         }
@@ -174,38 +202,6 @@ impl DoH {
         let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
         let configs = (*odoh_public_key).clone().config();
         match self.build_response(configs, 0, "application/octet-stream".to_string()) {
-            Ok(resp) => Ok(resp),
-            Err(e) => http_error(StatusCode::from(e)),
-        }
-    }
-
-    async fn serve_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        let query = req.uri().query().unwrap_or("");
-        let mut question_str = None;
-        for parts in query.split('&') {
-            let mut kv = parts.split('=');
-            if let Some(k) = kv.next() {
-                if k == DNS_QUERY_PARAM {
-                    question_str = kv.next();
-                }
-            }
-        }
-        let question = match question_str.and_then(|question_str| {
-            base64::decode_config(question_str, base64::URL_SAFE_NO_PAD).ok()
-        }) {
-            Some(question) => question,
-            _ => {
-                return http_error(StatusCode::BAD_REQUEST);
-            }
-        };
-
-        let resp = match self.proxy(question).await {
-            Ok(dns_resp) => {
-                self.build_response(dns_resp.packet, dns_resp.ttl, DoHType::Standard.as_str())
-            }
-            Err(e) => Err(e),
-        };
-        match resp {
             Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),
         }
