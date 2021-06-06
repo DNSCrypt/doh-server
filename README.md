@@ -114,6 +114,8 @@ Oblivious DoH is similar to Anonymized DNSCrypt, but for DoH. It requires relays
 
 This proxy supports ODoH termination (not relaying) out of the box.
 
+However, ephemeral keys are currently only stored in memory. In a load-balanced configuration, sticky sessions must be used.
+
 ## Operational recommendations
 
 * DoH can be easily detected and blocked using SNI inspection. As a mitigation, DoH endpoints should preferably share the same virtual host as existing, popular websites, rather than being on dedicated virtual hosts.
