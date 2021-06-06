@@ -113,6 +113,14 @@ impl hyper::service::Service<http::Request<Body>> for DoH {
 }
 
 impl DoH {
+    async fn serve_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        match Self::parse_content_type(&req) {
+            Ok(DoHType::Standard) => self.serve_doh_get(req).await,
+            Ok(DoHType::Oblivious) => self.serve_odoh_get(req).await,
+            Err(response) => return Ok(response),
+        }
+    }
+
     async fn serve_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
         if self.globals.disable_post {
             return http_error(StatusCode::METHOD_NOT_ALLOWED);
@@ -125,7 +133,7 @@ impl DoH {
         }
     }
 
-    async fn _serve_doh_query(&self, query: Vec<u8>) -> Result<Response<Body>, http::Error> {
+    async fn serve_doh_query(&self, query: Vec<u8>) -> Result<Response<Body>, http::Error> {
         let resp = match self.proxy(query).await {
             Ok(resp) => self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str()),
             Err(e) => return http_error(StatusCode::from(e)),
@@ -136,7 +144,7 @@ impl DoH {
         }
     }
 
-    async fn serve_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_doh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
         let http_query = req.uri().query().unwrap_or("");
         let mut question_str = None;
         for parts in http_query.split('&') {
@@ -155,7 +163,7 @@ impl DoH {
                 return http_error(StatusCode::BAD_REQUEST);
             }
         };
-        self._serve_doh_query(query).await
+        self.serve_doh_query(query).await
     }
 
     async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
@@ -163,7 +171,11 @@ impl DoH {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
         };
-        self._serve_doh_query(query).await
+        self.serve_doh_query(query).await
+    }
+
+    async fn serve_odoh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        unimplemented!()
     }
 
     async fn serve_odoh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
