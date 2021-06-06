@@ -155,6 +155,11 @@ impl DoH {
                 }
             }
         }
+        if let Some(question_str) = question_str {
+            if question_str.len() > MAX_DNS_QUESTION_LEN * 4 / 3 {
+                return None;
+            }
+        }
         let query = match question_str.and_then(|question_str| {
             base64::decode_config(question_str, base64::URL_SAFE_NO_PAD).ok()
         }) {
