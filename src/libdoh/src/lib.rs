@@ -144,7 +144,7 @@ impl DoH {
         }
     }
 
-    async fn serve_doh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    fn query_from_query_string(&self, req: Request<Body>) -> Option<Vec<u8>> {
         let http_query = req.uri().query().unwrap_or("");
         let mut question_str = None;
         for parts in http_query.split('&') {
@@ -159,9 +159,15 @@ impl DoH {
             base64::decode_config(question_str, base64::URL_SAFE_NO_PAD).ok()
         }) {
             Some(query) => query,
-            _ => {
-                return http_error(StatusCode::BAD_REQUEST);
-            }
+            _ => return None,
+        };
+        Some(query)
+    }
+
+    async fn serve_doh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        let query = match self.query_from_query_string(req) {
+            Some(query) => query,
+            _ => return http_error(StatusCode::BAD_REQUEST),
         };
         self.serve_doh_query(query).await
     }
@@ -174,16 +180,7 @@ impl DoH {
         self.serve_doh_query(query).await
     }
 
-    async fn serve_odoh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        unimplemented!()
-    }
-
-    async fn serve_odoh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        let encrypted_query = match self.read_body(req.into_body()).await {
-            Ok(q) => q,
-            Err(e) => return http_error(StatusCode::from(e)),
-        };
-
+    async fn serve_odoh(&self, encrypted_query: Vec<u8>) -> Result<Response<Body>, http::Error> {
         let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
         let (query, context) = match (*odoh_public_key)
             .clone()
@@ -208,6 +205,22 @@ impl DoH {
             Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),
         }
+    }
+
+    async fn serve_odoh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        let encrypted_query = match self.query_from_query_string(req) {
+            Some(encrypted_query) => encrypted_query,
+            _ => return http_error(StatusCode::BAD_REQUEST),
+        };
+        self.serve_odoh(encrypted_query).await
+    }
+
+    async fn serve_odoh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        let encrypted_query = match self.read_body(req.into_body()).await {
+            Ok(q) => q,
+            Err(e) => return http_error(StatusCode::from(e)),
+        };
+        self.serve_odoh(encrypted_query).await
     }
 
     async fn serve_odoh_configs(&self) -> Result<Response<Body>, http::Error> {
