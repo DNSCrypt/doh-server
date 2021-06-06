@@ -2,7 +2,7 @@
 name = "doh-proxy"
 version = "0.3.8"
 authors = ["Frank Denis <github@pureftpd.org>"]
-description = "A DNS-over-HTTPS (DoH) proxy"
+description = "A DNS-over-HTTPS (DoH) and ODoH (Oblivious DoH) proxy"
 keywords = ["dns","https","doh","proxy"]
 license = "MIT"
 homepage = "https://github.com/jedisct1/rust-doh"

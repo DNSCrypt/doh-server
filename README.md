@@ -1,6 +1,6 @@
 # doh-proxy
 
-A fast and secure DoH (DNS-over-HTTPS) server.
+A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 
 `doh-proxy` is written in Rust, and has been battle-tested in production since February 2018. It doesn't do DNS resolution on its own, but can sit in front of any DNS resolver in order to augment it with DoH support.
 
@@ -29,12 +29,11 @@ cargo install doh-proxy --no-default-features
 ## Usage
 
 ```text
-A DNS-over-HTTPS (DoH) proxy
-
 USAGE:
     doh-proxy [FLAGS] [OPTIONS]
 
 FLAGS:
+    -O, --allow-odoh-post      Allow POST queries over ODoH even with they have been disabed for DoH
     -K, --disable-keepalive    Disable keepalive
     -P, --disable-post         Disable POST queries
     -h, --help                 Prints help information
@@ -108,6 +107,12 @@ Encrypted DNS Server forwards DoH queries to Nginx or `doh-proxy` when a TLS con
 It also provides DNS caching, server-side filtering, metrics, and TCP connection reuse in order to mitigate exhaustion attacks.
 
 Unless the front-end is a CDN, an ideal setup is to use `doh-proxy` behind `Encrypted DNS Server`.
+
+## Oblivious DoH (ODoH)
+
+Oblivious DoH is similar to Anonymized DNSCrypt, but for DoH. It requires relays, but also upstream DoH servers that support the protocol.
+
+This proxy supports ODoH termination (not relaying) out of the box.
 
 ## Operational recommendations
 
