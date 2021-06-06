@@ -233,7 +233,11 @@ impl DoH {
     async fn serve_odoh_configs(&self) -> Result<Response<Body>, http::Error> {
         let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
         let configs = (*odoh_public_key).clone().config();
-        match self.build_response(configs, 0, "application/octet-stream".to_string()) {
+        match self.build_response(
+            configs,
+            ODOH_KEY_ROTATION_SECS,
+            "application/octet-stream".to_string(),
+        ) {
             Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),
         }
