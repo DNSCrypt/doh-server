@@ -14,7 +14,7 @@ use futures::prelude::*;
 use futures::task::{Context, Poll};
 use hyper::http;
 use hyper::server::conn::Http;
-use hyper::{Body, Method, Request, Response, StatusCode};
+use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -232,32 +232,67 @@ impl DoH {
         }
     }
 
+    fn acceptable_content_type(
+        headers: &HeaderMap,
+        content_types: &[&'static str],
+    ) -> Option<&'static str> {
+        let accept = headers.get(hyper::header::ACCEPT);
+        let accept = match accept {
+            None => return None,
+            Some(accept) => accept,
+        };
+        for part in accept.to_str().unwrap_or("").split(",").map(|s| s.trim()) {
+            if let Some(found) = part
+                .split(";")
+                .next()
+                .map(|s| s.trim().to_ascii_lowercase())
+            {
+                if let Some(&content_type) = content_types
+                    .iter()
+                    .find(|&&content_type| content_type == found)
+                {
+                    return Some(content_type);
+                }
+            }
+        }
+        None
+    }
+
     fn parse_content_type(req: &Request<Body>) -> Result<DoHType, Response<Body>> {
+        const CT_DOH: &str = "application/dns-message";
+        const CT_ODOH: &str = "application/oblivious-dns-message";
+
         let headers = req.headers();
         let content_type = match headers.get(hyper::header::CONTENT_TYPE) {
             None => {
-                let response = Response::builder()
-                    .status(StatusCode::NOT_ACCEPTABLE)
-                    .body(Body::empty())
-                    .unwrap();
-                return Err(response);
+                let acceptable_content_type =
+                    Self::acceptable_content_type(headers, &[CT_DOH, CT_ODOH]);
+                match acceptable_content_type {
+                    None => {
+                        let response = Response::builder()
+                            .status(StatusCode::NOT_ACCEPTABLE)
+                            .body(Body::empty())
+                            .unwrap();
+                        return Err(response);
+                    }
+                    Some(content_type) => content_type,
+                }
             }
-            Some(content_type) => content_type.to_str(),
-        };
-        let content_type = match content_type {
-            Err(_) => {
-                let response = Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::empty())
-                    .unwrap();
-                return Err(response);
-            }
-            Ok(content_type) => content_type.to_lowercase(),
+            Some(content_type) => match content_type.to_str() {
+                Err(_) => {
+                    let response = Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::empty())
+                        .unwrap();
+                    return Err(response);
+                }
+                Ok(content_type) => content_type,
+            },
         };
 
-        match content_type.as_str() {
-            "application/dns-message" => Ok(DoHType::Standard),
-            "application/oblivious-dns-message" => Ok(DoHType::Oblivious),
+        match content_type.to_ascii_lowercase().as_str() {
+            CT_DOH => Ok(DoHType::Standard),
+            CT_ODOH => Ok(DoHType::Oblivious),
             _ => {
                 let response = Response::builder()
                     .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
