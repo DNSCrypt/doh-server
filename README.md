@@ -116,6 +116,11 @@ This proxy supports ODoH termination (not relaying) out of the box.
 
 However, ephemeral keys are currently only stored in memory. In a load-balanced configuration, sticky sessions must be used.
 
+Currently available ODoH relays only use `POST` queries.
+So, `POST` queries have been disabled for regular DoH queries, accepting them is required to be compatible with ODoH relays.
+
+This can be achieved with the `--allow-odoh-post` command-line switch.
+
 ## Operational recommendations
 
 * DoH can be easily detected and blocked using SNI inspection. As a mitigation, DoH endpoints should preferably share the same virtual host as existing, popular websites, rather than being on dedicated virtual hosts.
