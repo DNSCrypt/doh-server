@@ -1,6 +1,6 @@
 [package]
 name = "libdoh"
-version = "0.3.8"
+version = "0.4.0"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "DoH library for the rust-doh app"
 keywords = ["dns","https","doh","proxy"]
@@ -23,7 +23,7 @@ hyper = { version = "0.14.4", default-features = false, features = ["server", "h
 tokio = { version = "1.6.0", features = ["net", "rt-multi-thread", "parking_lot", "time", "sync"] }
 tokio-rustls = { version = "0.22.0", features = ["early-data"], optional = true }
 odoh-rs = "0.1.11"
-rand = "0.7"
+rand = "0.7.0"
 hpke = "0.5.0"
 arc-swap = "1.2.0"
 

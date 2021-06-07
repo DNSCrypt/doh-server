@@ -1,6 +1,6 @@
 [package]
 name = "doh-proxy"
-version = "0.3.8"
+version = "0.4.0"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "A DNS-over-HTTPS (DoH) and ODoH (Oblivious DoH) proxy"
 keywords = ["dns","https","doh","proxy"]
@@ -16,14 +16,14 @@ default = ["tls"]
 tls = ["libdoh/tls"]
 
 [dependencies]
-libdoh = { path = "src/libdoh", version = "0.3.8", default-features = false }
+libdoh = { path = "src/libdoh", version = "0.4.0", default-features = false }
 clap = "2.33.3"
 dnsstamps = "0.1.5"
 jemallocator = "0.3.2"
 
 [package.metadata.deb]
 extended-description = """\
-A fast and secure DoH (DNS-over-HTTPS) server written in Rust."""
+A fast and secure DoH (DNS-over-HTTPS) and ODoH server written in Rust."""
 assets = [
   ["target/release/doh-proxy", "usr/bin/", "755"],
   ["README.md", "usr/share/doc/doh-proxy/README.md", "644"]
