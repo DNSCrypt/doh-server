@@ -133,7 +133,7 @@ pub fn parse_opts(globals: &mut Globals) {
             Arg::with_name("allow_odoh_post")
                 .short("O")
                 .long("allow-odoh-post")
-                .help("Allow POST queries over ODoH even with they have been disabed for DoH"),
+                .help("Allow POST queries over ODoH even if they have been disabed for DoH"),
         );
 
     #[cfg(feature = "tls")]
