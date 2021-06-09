@@ -40,6 +40,10 @@ pub struct Globals {
 pub struct ClientsCount(Arc<AtomicUsize>);
 
 impl ClientsCount {
+    pub fn current(&self) -> usize {
+        self.0.load(Ordering::Relaxed)
+    }
+
     pub fn increment(&self) -> usize {
         self.0.fetch_add(1, Ordering::Relaxed)
     }

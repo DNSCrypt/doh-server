@@ -2,9 +2,13 @@ use anyhow::{ensure, Error};
 use byteorder::{BigEndian, ByteOrder};
 
 const DNS_HEADER_SIZE: usize = 12;
+pub const DNS_OFFSET_FLAGS: usize = 2;
 const DNS_MAX_HOSTNAME_SIZE: usize = 256;
 const DNS_MAX_PACKET_SIZE: usize = 4096;
 const DNS_OFFSET_QUESTION: usize = DNS_HEADER_SIZE;
+
+const DNS_FLAGS_TC: u16 = 1u16 << 9;
+
 const DNS_TYPE_OPT: u16 = 41;
 
 const DNS_PTYPE_PADDING: u16 = 12;
@@ -49,6 +53,11 @@ fn nscount(packet: &[u8]) -> u16 {
 pub fn is_recoverable_error(packet: &[u8]) -> bool {
     let rcode = rcode(packet);
     rcode == DNS_RCODE_SERVFAIL || rcode == DNS_RCODE_REFUSED
+}
+
+#[inline]
+pub fn is_truncated(packet: &[u8]) -> bool {
+    BigEndian::read_u16(&packet[DNS_OFFSET_FLAGS..]) & DNS_FLAGS_TC == DNS_FLAGS_TC
 }
 
 fn skip_name(packet: &[u8], offset: usize) -> Result<usize, Error> {

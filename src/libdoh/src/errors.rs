@@ -1,7 +1,6 @@
 use hyper::StatusCode;
 use std::io;
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum DoHError {
     Incomplete,
@@ -13,6 +12,7 @@ pub enum DoHError {
     Hyper(hyper::Error),
     Io(io::Error),
     ODoHConfigError(anyhow::Error),
+    TooManyTcpSessions,
 }
 
 impl std::error::Error for DoHError {}
@@ -29,6 +29,7 @@ impl std::fmt::Display for DoHError {
             DoHError::Hyper(e) => write!(fmt, "HTTP error: {}", e),
             DoHError::Io(e) => write!(fmt, "IO error: {}", e),
             DoHError::ODoHConfigError(e) => write!(fmt, "ODoH config error: {}", e),
+            DoHError::TooManyTcpSessions => write!(fmt, "Too many TCP sessions"),
         }
     }
 }
@@ -45,6 +46,7 @@ impl From<DoHError> for StatusCode {
             DoHError::Hyper(_) => StatusCode::SERVICE_UNAVAILABLE,
             DoHError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
             DoHError::ODoHConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            DoHError::TooManyTcpSessions => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }
