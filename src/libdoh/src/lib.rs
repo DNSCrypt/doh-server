@@ -10,16 +10,18 @@ use crate::constants::*;
 pub use crate::errors::*;
 pub use crate::globals::*;
 
+use byteorder::{BigEndian, ByteOrder};
 use futures::prelude::*;
 use futures::task::{Context, Poll};
 use hyper::http;
 use hyper::server::conn::Http;
 use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode};
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpSocket, UdpSocket};
 use tokio::runtime;
 
 pub mod reexports {
@@ -340,22 +342,65 @@ impl DoH {
         }
         let _ = dns::set_edns_max_payload_size(&mut query, MAX_DNS_RESPONSE_LEN as _);
         let globals = &self.globals;
-        let socket = UdpSocket::bind(&globals.local_bind_address)
-            .await
-            .map_err(DoHError::Io)?;
-        let expected_server_address = globals.server_address;
-        let (min_ttl, max_ttl, err_ttl) = (globals.min_ttl, globals.max_ttl, globals.err_ttl);
-        socket
-            .send_to(&query, &globals.server_address)
-            .map_err(DoHError::Io)
-            .await?;
         let mut packet = vec![0; MAX_DNS_RESPONSE_LEN];
-        let (len, response_server_address) =
-            socket.recv_from(&mut packet).map_err(DoHError::Io).await?;
-        if len < MIN_DNS_PACKET_LEN || expected_server_address != response_server_address {
-            return Err(DoHError::UpstreamIssue);
+        let (min_ttl, max_ttl, err_ttl) = (globals.min_ttl, globals.max_ttl, globals.err_ttl);
+
+        // UDP
+        {
+            let socket = UdpSocket::bind(&globals.local_bind_address)
+                .await
+                .map_err(DoHError::Io)?;
+            let expected_server_address = globals.server_address;
+            socket
+                .send_to(&query, &globals.server_address)
+                .map_err(DoHError::Io)
+                .await?;
+            let (len, response_server_address) =
+                socket.recv_from(&mut packet).map_err(DoHError::Io).await?;
+            if len < MIN_DNS_PACKET_LEN || expected_server_address != response_server_address {
+                return Err(DoHError::UpstreamIssue);
+            }
+            packet.truncate(len);
         }
-        packet.truncate(len);
+
+        // TCP
+        if dns::is_truncated(&packet) {
+            let clients_count = self.globals.clients_count.current();
+            if self.globals.max_clients >= UDP_TCP_RATIO
+                && clients_count >= self.globals.max_clients / UDP_TCP_RATIO
+            {
+                return Err(DoHError::TooManyTcpSessions);
+            }
+            let socket = match globals.server_address {
+                SocketAddr::V4(_) => TcpSocket::new_v4(),
+                SocketAddr::V6(_) => TcpSocket::new_v6(),
+            }
+            .map_err(DoHError::Io)?;
+            let mut ext_socket = socket
+                .connect(globals.server_address)
+                .await
+                .map_err(DoHError::Io)?;
+            ext_socket.set_nodelay(true).map_err(DoHError::Io)?;
+            let mut binlen = [0u8, 0];
+            BigEndian::write_u16(&mut binlen, query.len() as u16);
+            ext_socket.write_all(&binlen).await.map_err(DoHError::Io)?;
+            ext_socket.write_all(&query).await.map_err(DoHError::Io)?;
+            ext_socket.flush().await.map_err(DoHError::Io)?;
+            ext_socket
+                .read_exact(&mut binlen)
+                .await
+                .map_err(DoHError::Io)?;
+            let packet_len = BigEndian::read_u16(&binlen) as usize;
+            if packet_len < MIN_DNS_PACKET_LEN || packet_len > MAX_DNS_RESPONSE_LEN {
+                return Err(DoHError::UpstreamIssue);
+            }
+            packet = vec![0u8; packet_len];
+            ext_socket
+                .read_exact(&mut packet)
+                .await
+                .map_err(DoHError::Io)?;
+        }
+
         let ttl = if dns::is_recoverable_error(&packet) {
             err_ttl
         } else {
