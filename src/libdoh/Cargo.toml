@@ -1,6 +1,6 @@
 [package]
 name = "libdoh"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "DoH library for the rust-doh app"
 keywords = ["dns","https","doh","odoh","proxy"]
@@ -21,7 +21,7 @@ base64 = "0.13.0"
 byteorder = "1.4.2"
 bytes = "1.0.1"
 futures = "0.3.13"
-hpke = "0.6.0"
+hpke = "0.5.1"
 hyper = { version = "0.14.4", default-features = false, features = ["server", "http1", "http2", "stream"] }
 odoh-rs = "1.0.0-alpha"
 rand = "0.8.3"
