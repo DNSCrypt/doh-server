@@ -70,20 +70,14 @@ impl ODoHPublicKey {
             query: query.clone(),
             server_secret,
         };
-        let mut query_bytes = Vec::new();
-        query
-            .serialize(&mut query_bytes)
-            .map_err(|_| DoHError::InvalidData)?;
-        Ok((query_bytes, context))
+        Ok((query.into_msg().to_vec(), context))
     }
 }
 
 impl ODoHQueryContext {
     pub fn encrypt_response(self, response_body: Vec<u8>) -> Result<Vec<u8>, DoHError> {
         let response_nonce = rand::thread_rng().gen::<ResponseNonce>();
-        let response_body_ =
-            ObliviousDoHMessagePlaintext::deserialize(&mut bytes::Bytes::from(response_body))
-                .map_err(|_| DoHError::InvalidData)?;
+        let response_body_ = ObliviousDoHMessagePlaintext::new(response_body, 0);
         let encrypted_response = odoh_rs::encrypt_response(
             &self.query,
             &response_body_,

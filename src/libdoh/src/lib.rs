@@ -192,12 +192,10 @@ impl DoH {
             Ok((q, context)) => (q.to_vec(), context),
             Err(e) => return http_error(StatusCode::from(e)),
         };
-
         let resp = match self.proxy(query).await {
             Ok(resp) => resp,
             Err(e) => return http_error(StatusCode::from(e)),
         };
-
         let encrypted_resp = match context.encrypt_response(resp.packet) {
             Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str()),
             Err(e) => return http_error(StatusCode::from(e)),
