@@ -119,7 +119,7 @@ impl DoH {
         match Self::parse_content_type(&req) {
             Ok(DoHType::Standard) => self.serve_doh_get(req).await,
             Ok(DoHType::Oblivious) => self.serve_odoh_get(req).await,
-            Err(response) => return Ok(response),
+            Err(response) => Ok(response),
         }
     }
 
@@ -127,7 +127,7 @@ impl DoH {
         match Self::parse_content_type(&req) {
             Ok(DoHType::Standard) => self.serve_doh_post(req).await,
             Ok(DoHType::Oblivious) => self.serve_odoh_post(req).await,
-            Err(response) => return Ok(response),
+            Err(response) => Ok(response),
         }
     }
 
@@ -187,12 +187,8 @@ impl DoH {
     }
 
     async fn serve_odoh(&self, encrypted_query: Vec<u8>) -> Result<Response<Body>, http::Error> {
-        let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
-        let (query, context) = match (*odoh_public_key)
-            .clone()
-            .decrypt_query(encrypted_query)
-            .await
-        {
+        let odoh_public_key = (*self.globals.odoh_rotator).clone().current_public_key();
+        let (query, context) = match (*odoh_public_key).clone().decrypt_query(encrypted_query) {
             Ok((q, context)) => (q.to_vec(), context),
             Err(e) => return http_error(StatusCode::from(e)),
         };
@@ -202,7 +198,7 @@ impl DoH {
             Err(e) => return http_error(StatusCode::from(e)),
         };
 
-        let encrypted_resp = match context.encrypt_response(resp.packet).await {
+        let encrypted_resp = match context.encrypt_response(resp.packet) {
             Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str()),
             Err(e) => return http_error(StatusCode::from(e)),
         };
@@ -233,8 +229,8 @@ impl DoH {
     }
 
     async fn serve_odoh_configs(&self) -> Result<Response<Body>, http::Error> {
-        let odoh_public_key = (*self.globals.odoh_rotator).clone().current_key();
-        let configs = (*odoh_public_key).clone().config();
+        let odoh_public_key = (*self.globals.odoh_rotator).clone().current_public_key();
+        let configs = (*odoh_public_key).clone().into_config();
         match self.build_response(
             configs,
             ODOH_KEY_ROTATION_SECS,
@@ -254,9 +250,9 @@ impl DoH {
             None => return None,
             Some(accept) => accept,
         };
-        for part in accept.to_str().unwrap_or("").split(",").map(|s| s.trim()) {
+        for part in accept.to_str().unwrap_or("").split(',').map(|s| s.trim()) {
             if let Some(found) = part
-                .split(";")
+                .split(';')
                 .next()
                 .map(|s| s.trim().to_ascii_lowercase())
             {
@@ -311,7 +307,7 @@ impl DoH {
                     .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
                     .body(Body::empty())
                     .unwrap();
-                return Err(response);
+                Err(response)
             }
         }
     }
@@ -391,7 +387,7 @@ impl DoH {
                 .await
                 .map_err(DoHError::Io)?;
             let packet_len = BigEndian::read_u16(&binlen) as usize;
-            if packet_len < MIN_DNS_PACKET_LEN || packet_len > MAX_DNS_RESPONSE_LEN {
+            if !(MIN_DNS_PACKET_LEN..=MAX_DNS_RESPONSE_LEN).contains(&packet_len) {
                 return Err(DoHError::UpstreamIssue);
             }
             packet = vec![0u8; packet_len];
