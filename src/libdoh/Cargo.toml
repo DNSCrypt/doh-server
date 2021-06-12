@@ -16,16 +16,17 @@ tls = ["tokio-rustls"]
 
 [dependencies]
 anyhow = "1.0.38"
-byteorder = "1.4.2"
+arc-swap = "1.2.0"
 base64 = "0.13.0"
+byteorder = "1.4.2"
+bytes = "1.0.1"
 futures = "0.3.13"
+hpke = "0.6.0"
 hyper = { version = "0.14.4", default-features = false, features = ["server", "http1", "http2", "stream"] }
+odoh-rs = "1.0.0-alpha"
+rand = "0.8.3"
 tokio = { version = "1.6.0", features = ["net", "rt-multi-thread", "parking_lot", "time", "sync"] }
 tokio-rustls = { version = "0.22.0", features = ["early-data"], optional = true }
-odoh-rs = "0.1.11"
-rand = "0.7.0"
-hpke = "0.5.0"
-arc-swap = "1.2.0"
 
 [profile.release]
 codegen-units = 1
