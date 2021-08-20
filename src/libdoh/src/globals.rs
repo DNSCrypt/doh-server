@@ -1,4 +1,5 @@
 use crate::odoh::ODoHRotator;
+use crate::odoh_proxy::ODoHProxy;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -20,6 +21,7 @@ pub struct Globals {
     pub local_bind_address: SocketAddr,
     pub server_address: SocketAddr,
     pub path: String,
+    pub odoh_proxy_path: String,
     pub max_clients: usize,
     pub timeout: Duration,
     pub clients_count: ClientsCount,
@@ -32,6 +34,7 @@ pub struct Globals {
     pub allow_odoh_post: bool,
     pub odoh_configs_path: String,
     pub odoh_rotator: Arc<ODoHRotator>,
+    pub odoh_proxy: ODoHProxy,
 
     pub runtime_handle: runtime::Handle,
 }

@@ -70,6 +70,14 @@ pub fn parse_opts(globals: &mut Globals) {
                 .help("URI path"),
         )
         .arg(
+            Arg::with_name("odoh_proxy_path")
+                .short("q")
+                .long("odoh-proxy-path")
+                .takes_value(true)
+                .default_value(ODOH_PROXY_PATH)
+                .help("ODoH proxy URI path"),
+        )
+        .arg(
             Arg::with_name("max_clients")
                 .short("c")
                 .long("max-clients")
@@ -133,7 +141,7 @@ pub fn parse_opts(globals: &mut Globals) {
             Arg::with_name("allow_odoh_post")
                 .short("O")
                 .long("allow-odoh-post")
-                .help("Allow POST queries over ODoH even if they have been disabed for DoH"),
+                .help("Allow POST queries over ODoH even if they have been disabled for DoH"),
         );
 
     #[cfg(feature = "tls")]
@@ -181,6 +189,10 @@ pub fn parse_opts(globals: &mut Globals) {
     if !globals.path.starts_with('/') {
         globals.path = format!("/{}", globals.path);
     }
+    globals.odoh_proxy_path = matches.value_of("odoh_proxy_path").unwrap().to_string();
+    if !globals.odoh_proxy_path.starts_with('/') {
+        globals.odoh_proxy_path = format!("/{}", globals.odoh_proxy_path);
+    }
     globals.max_clients = matches.value_of("max_clients").unwrap().parse().unwrap();
     globals.timeout = Duration::from_secs(matches.value_of("timeout").unwrap().parse().unwrap());
     globals.max_concurrent_streams = matches.value_of("max_concurrent").unwrap().parse().unwrap();
@@ -190,6 +202,8 @@ pub fn parse_opts(globals: &mut Globals) {
     globals.keepalive = !matches.is_present("disable_keepalive");
     globals.disable_post = matches.is_present("disable_post");
     globals.allow_odoh_post = matches.is_present("allow_odoh_post");
+
+    globals.odoh_proxy = libdoh::odoh_proxy::ODoHProxy::new(globals.timeout).unwrap();
 
     #[cfg(feature = "tls")]
     {
@@ -215,7 +229,15 @@ pub fn parse_opts(globals: &mut Globals) {
         let builder =
             dnsstamps::ODoHTargetBuilder::new(hostname.to_string(), globals.path.to_string());
         println!(
-            "Test DNS stamp to reach [{}] over Oblivious DoH: [{}]\n",
+            "Test DNS stamp to reach [{}] over Oblivious DoH Target: [{}]\n",
+            hostname,
+            builder.serialize().unwrap()
+        );
+
+        let builder =
+            dnsstamps::ODoHRelayBuilder::new(hostname.to_string(), globals.odoh_proxy_path.to_string());
+        println!(
+            "Test DNS stamp to reach [{}] over Oblivious DoH Proxy: [{}]\n",
             hostname,
             builder.serialize().unwrap()
         );
