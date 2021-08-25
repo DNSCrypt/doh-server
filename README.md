@@ -26,6 +26,12 @@ cargo install doh-proxy
 cargo install doh-proxy --no-default-features
 ```
 
+* With Oblivious DoH Proxy function (**for testing pupose**):
+
+```sh
+cargo install doh-proxy --features=doh-proxy
+```
+
 ## Usage
 
 ```text
@@ -113,9 +119,11 @@ Unless the front-end is a CDN, an ideal setup is to use `doh-proxy` behind `Encr
 
 Oblivious DoH is similar to Anonymized DNSCrypt, but for DoH. It requires relays, but also upstream DoH servers that support the protocol.
 
-This proxy supports ODoH termination out of the box and relaying.
+This proxy supports ODoH termination out of the box.
 
 However, ephemeral keys are currently only stored in memory. In a load-balanced configuration, sticky sessions must be used.
+
+This also also provides ODoH relaying (Oblivious Proxy) of naive implementation, which is **for testing purposes only**. Please do not deploy the relaying function AS-IS. You need to carefully consider the performance and security issues when you deploy ODoH relays. Further, the relaying protocol is not fully fixed yet in the IETF draft.
 
 As currently available ODoH relays only use `POST` queries, this proxy accepts and issues `POST` queries both in ODoH target and relay functions.
 So, `POST` queries have been disabled for regular DoH queries, accepting them is required to be compatible with ODoH relays.

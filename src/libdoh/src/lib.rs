@@ -3,6 +3,7 @@ pub mod dns;
 mod errors;
 mod globals;
 pub mod odoh;
+#[cfg(feature = "odoh-proxy")]
 pub mod odoh_proxy;
 #[cfg(feature = "tls")]
 mod tls;
@@ -24,7 +25,6 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, UdpSocket};
 use tokio::runtime;
-use urlencoding::decode;
 
 pub mod reexports {
     pub use tokio;
@@ -105,30 +105,35 @@ impl hyper::service::Service<http::Request<Body>> for DoH {
                 Method::GET => Box::pin(async move { self_inner.serve_get(req).await }),
                 _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
             }
-        } else if req.uri().path() == globals.odoh_proxy_path {
-            // Draft:        https://datatracker.ietf.org/doc/html/draft-pauly-dprive-oblivious-doh-06
-            // Golang impl.: https://github.com/cloudflare/odoh-server-go
-            // Based on the draft and Golang implementation, only post method is allowed.
-            match *req.method() {
-                Method::POST => {
-                    Box::pin(async move { self_inner.serve_odoh_proxy_post(req).await })
-                }
-                _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
-            }
         } else if req.uri().path() == globals.odoh_configs_path {
             match *req.method() {
                 Method::GET => Box::pin(async move { self_inner.serve_odoh_configs().await }),
                 _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
             }
         } else {
-            Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+            #[cfg(not(feature = "odoh-proxy"))]
+            {
+                Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+            }
+            #[cfg(feature = "odoh-proxy")]
+            {
+                if req.uri().path() == globals.odoh_proxy_path {
+                    // Draft:        https://datatracker.ietf.org/doc/html/draft-pauly-dprive-oblivious-doh-06
+                    // Golang impl.: https://github.com/cloudflare/odoh-server-go
+                    // Based on the draft and Golang implementation, only post method is allowed.
+                    match *req.method() {
+                        Method::POST => {
+                            Box::pin(async move { self_inner.serve_odoh_proxy_post(req).await })
+                        }
+                        _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
+                    }
+                }
+                else {
+                    Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+                }
+            }
         }
     }
-}
-
-struct ParsedUriQuery {
-    pub dns_query: Option<Vec<u8>>,
-    pub target_uri: Option<String>,
 }
 
 impl DoH {
@@ -159,67 +164,33 @@ impl DoH {
         }
     }
 
-    fn parse_query_string(&self, http_query: &str) -> ParsedUriQuery {
+    fn query_from_query_string(&self, req: Request<Body>) -> Option<Vec<u8>> {
+        let http_query = req.uri().query().unwrap_or("");
         let mut question_str = None;
-        let mut targethost = None;
-        let mut targetpath = None;
         for parts in http_query.split('&') {
             let mut kv = parts.split('=');
             if let Some(k) = kv.next() {
-                match k {
-                    DNS_QUERY_PARAM => {
-                        question_str = kv.next();
-                    }
-                    ODOH_TARGET_HOST_QUERY_PARAM => {
-                        targethost = kv.next().map(str::to_string);
-                    }
-                    ODOH_TARGET_PATH_QUERY_PARAM => {
-                        targetpath = kv.next().map(str::to_string);
-                    }
-                    _ => (),
+                if k == DNS_QUERY_PARAM {
+                    question_str = kv.next();
                 }
             }
         }
-        let target_uri = if let (Some(host), Some(path)) = (targethost, targetpath) {
-            // remove percent encoding
-            Some(
-                decode(&format!("https://{}{}", host, path))
-                    .unwrap_or(std::borrow::Cow::Borrowed(""))
-                    .to_string(),
-            )
-        } else {
-            None
-        };
         if let Some(question_str) = question_str {
             if question_str.len() > MAX_DNS_QUESTION_LEN * 4 / 3 {
-                return ParsedUriQuery {
-                    dns_query: None,
-                    target_uri,
-                };
+                return None;
             }
         }
         let query = match question_str.and_then(|question_str| {
             base64::decode_config(question_str, base64::URL_SAFE_NO_PAD).ok()
         }) {
             Some(query) => query,
-            _ => {
-                return ParsedUriQuery {
-                    dns_query: None,
-                    target_uri,
-                }
-            }
+            _ => return None,
         };
-        ParsedUriQuery {
-            dns_query: Some(query),
-            target_uri,
-        }
+        Some(query)
     }
 
     async fn serve_doh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        let query = match self
-            .parse_query_string(req.uri().query().unwrap_or(""))
-            .dns_query
-        {
+        let query = match self.query_from_query_string(req) {
             Some(query) => query,
             _ => return http_error(StatusCode::BAD_REQUEST),
         };
@@ -259,10 +230,7 @@ impl DoH {
     }
 
     async fn serve_odoh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        let encrypted_query = match self
-            .parse_query_string(req.uri().query().unwrap_or(""))
-            .dns_query
-        {
+        let encrypted_query = match self.query_from_query_string(req) {
             Some(encrypted_query) => encrypted_query,
             _ => return http_error(StatusCode::BAD_REQUEST),
         };
@@ -280,6 +248,7 @@ impl DoH {
         self.serve_odoh(encrypted_query).await
     }
 
+    #[cfg(feature = "odoh-proxy")]
     async fn serve_odoh_proxy(
         &self,
         encrypted_query: Vec<u8>,
@@ -301,6 +270,7 @@ impl DoH {
         }
     }
 
+    #[cfg(feature = "odoh-proxy")]
     async fn serve_odoh_proxy_post(
         &self,
         req: Request<Body>,
@@ -317,11 +287,8 @@ impl DoH {
         match Self::parse_content_type(&req) {
             Ok(DoHType::Oblivious) => {
                 let http_query = req.uri().query().unwrap_or("");
-                let target_uri = match self.parse_query_string(http_query) {
-                    ParsedUriQuery {
-                        dns_query: _,
-                        target_uri: Some(uri),
-                    } => uri,
+                let target_uri = match odoh_proxy::target_uri_from_query_string(http_query) {
+                    Some(uri) => uri,
                     _ => return http_error(StatusCode::BAD_REQUEST),
                 };
                 let encrypted_query = match self.read_body(req.into_body()).await {
@@ -588,6 +555,8 @@ impl DoH {
             .await
             .map_err(DoHError::Io)?;
         let path = &self.globals.path;
+
+        #[cfg(feature = "odoh-proxy")]
         let odoh_proxy_path = &self.globals.odoh_proxy_path;
 
         let tls_enabled: bool;
@@ -602,9 +571,11 @@ impl DoH {
         }
         if tls_enabled {
             println!("ODoH/DoH Server: Listening on https://{}{}", listen_address, path);
+            #[cfg(feature = "odoh-proxy")]
             println!("ODoH Proxy     : Listening on https://{}{}", listen_address, odoh_proxy_path);
         } else {
             println!("ODoH/DoH Server: Listening on http://{}{}", listen_address, path);
+            #[cfg(feature = "odoh-proxy")]
             println!("ODoH Proxy     : Listening on http://{}{}", listen_address, odoh_proxy_path);
         }
 

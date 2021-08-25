@@ -70,14 +70,6 @@ pub fn parse_opts(globals: &mut Globals) {
                 .help("URI path"),
         )
         .arg(
-            Arg::with_name("odoh_proxy_path")
-                .short("q")
-                .long("odoh-proxy-path")
-                .takes_value(true)
-                .default_value(ODOH_PROXY_PATH)
-                .help("ODoH proxy URI path"),
-        )
-        .arg(
             Arg::with_name("max_clients")
                 .short("c")
                 .long("max-clients")
@@ -163,6 +155,17 @@ pub fn parse_opts(globals: &mut Globals) {
                 .help("Path to the PEM-encoded secret keys (only required for built-in TLS)"),
         );
 
+    #[cfg(feature = "odoh-proxy")]
+    let options = options
+        .arg(
+            Arg::with_name("odoh_proxy_path")
+                .short("q")
+                .long("odoh-proxy-path")
+                .takes_value(true)
+                .default_value(ODOH_PROXY_PATH)
+                .help("ODoH proxy URI path"),
+        );
+
     let matches = options.get_matches();
     globals.listen_address = matches.value_of("listen_address").unwrap().parse().unwrap();
 
@@ -189,10 +192,6 @@ pub fn parse_opts(globals: &mut Globals) {
     if !globals.path.starts_with('/') {
         globals.path = format!("/{}", globals.path);
     }
-    globals.odoh_proxy_path = matches.value_of("odoh_proxy_path").unwrap().to_string();
-    if !globals.odoh_proxy_path.starts_with('/') {
-        globals.odoh_proxy_path = format!("/{}", globals.odoh_proxy_path);
-    }
     globals.max_clients = matches.value_of("max_clients").unwrap().parse().unwrap();
     globals.timeout = Duration::from_secs(matches.value_of("timeout").unwrap().parse().unwrap());
     globals.max_concurrent_streams = matches.value_of("max_concurrent").unwrap().parse().unwrap();
@@ -203,8 +202,6 @@ pub fn parse_opts(globals: &mut Globals) {
     globals.disable_post = matches.is_present("disable_post");
     globals.allow_odoh_post = matches.is_present("allow_odoh_post");
 
-    globals.odoh_proxy = libdoh::odoh_proxy::ODoHProxy::new(globals.timeout).unwrap();
-
     #[cfg(feature = "tls")]
     {
         globals.tls_cert_path = matches.value_of("tls_cert_path").map(PathBuf::from);
@@ -212,6 +209,15 @@ pub fn parse_opts(globals: &mut Globals) {
             .value_of("tls_cert_key_path")
             .map(PathBuf::from)
             .or_else(|| globals.tls_cert_path.clone());
+    }
+
+    #[cfg(feature = "odoh-proxy")]
+    {
+        globals.odoh_proxy_path = matches.value_of("odoh_proxy_path").unwrap().to_string();
+        if !globals.odoh_proxy_path.starts_with('/') {
+            globals.odoh_proxy_path = format!("/{}", globals.odoh_proxy_path);
+        }
+        globals.odoh_proxy = libdoh::odoh_proxy::ODoHProxy::new(globals.timeout).unwrap();
     }
 
     if let Some(hostname) = matches.value_of("hostname") {
@@ -234,13 +240,16 @@ pub fn parse_opts(globals: &mut Globals) {
             builder.serialize().unwrap()
         );
 
-        let builder =
-            dnsstamps::ODoHRelayBuilder::new(hostname.to_string(), globals.odoh_proxy_path.to_string());
-        println!(
-            "Test DNS stamp to reach [{}] over Oblivious DoH Proxy: [{}]\n",
-            hostname,
-            builder.serialize().unwrap()
-        );
+        #[cfg(feature = "odoh-proxy")]
+        {
+            let builder =
+                dnsstamps::ODoHRelayBuilder::new(hostname.to_string(), globals.odoh_proxy_path.to_string());
+            println!(
+                "Test DNS stamp to reach [{}] over Oblivious DoH Proxy: [{}]\n",
+                hostname,
+                builder.serialize().unwrap()
+            );
+        }
 
         println!("Check out https://dnscrypt.info/stamps/ to compute the actual stamps.\n")
     } else {
