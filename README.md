@@ -33,7 +33,7 @@ USAGE:
     doh-proxy [FLAGS] [OPTIONS]
 
 FLAGS:
-    -O, --allow-odoh-post      Allow POST queries over ODoH even with they have been disabed for DoH
+    -O, --allow-odoh-post      Allow POST queries over ODoH even if they have been disabed for DoH
     -K, --disable-keepalive    Disable keepalive
     -P, --disable-post         Disable POST queries
     -h, --help                 Prints help information
@@ -50,6 +50,7 @@ OPTIONS:
     -T, --min-ttl <min_ttl>                          Minimum TTL, in seconds [default: 10]
     -p, --path <path>                                URI path [default: /dns-query]
     -g, --public-address <public_address>            External IP address DoH clients will connect to
+    -j, --public-port <public_port>                  External port DoH clients will connect to, if not 443
     -u, --server-address <server_address>            Address to connect to [default: 9.9.9.9:53]
     -t, --timeout <timeout>                          Timeout, in seconds [default: 10]
     -I, --tls-cert-key-path <tls_cert_key_path>
