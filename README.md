@@ -57,6 +57,7 @@ OPTIONS:
     -q, --odoh-proxy-path <odoh_proxy_path>          ODoH proxy URI path [default: /proxy]
     -p, --path <path>                                URI path [default: /dns-query]
     -g, --public-address <public_address>            External IP address DoH clients will connect to
+    -j, --public-port <public_port>                  External port DoH clients will connect to, if not 443
     -u, --server-address <server_address>            Address to connect to [default: 9.9.9.9:53]
     -t, --timeout <timeout>                          Timeout, in seconds [default: 10]
     -I, --tls-cert-key-path <tls_cert_key_path>
@@ -196,7 +197,6 @@ This [Go code snippet](https://gist.github.com/d6cb41742a1ceb54d48cc286f3d5c5fa)
 ### Common certificate hashes
 
 * Let's Encrypt R3:
-  * `3286ff65a65faf32085eea1388c3738ba7e37873c906cce3c4a28b4cc2a58988` and
   * `444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce`
 * Let's Encrypt E1:
   * `cc1060d39c8329b62b6fbc7d0d6df9309869b981e7e6392d5cd8fa408f4d80e6`

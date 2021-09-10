@@ -155,7 +155,9 @@ impl DoH {
 
     async fn serve_doh_query(&self, query: Vec<u8>) -> Result<Response<Body>, http::Error> {
         let resp = match self.proxy(query).await {
-            Ok(resp) => self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str()),
+            Ok(resp) => {
+                self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str(), true)
+            }
             Err(e) => return http_error(StatusCode::from(e)),
         };
         match resp {
@@ -219,7 +221,7 @@ impl DoH {
             Err(e) => return http_error(StatusCode::from(e)),
         };
         let encrypted_resp = match context.encrypt_response(resp.packet) {
-            Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str()),
+            Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str(), false),
             Err(e) => return http_error(StatusCode::from(e)),
         };
 
@@ -260,7 +262,7 @@ impl DoH {
             .forward_to_target(&encrypted_query, target_uri)
             .await
         {
-            Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str()),
+            Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str(), true),
             Err(e) => return http_error(e),
         };
 
@@ -315,6 +317,7 @@ impl DoH {
             configs,
             ODOH_KEY_ROTATION_SECS,
             "application/octet-stream".to_string(),
+            true,
         ) {
             Ok(resp) => Ok(resp),
             Err(e) => http_error(StatusCode::from(e)),
@@ -496,9 +499,10 @@ impl DoH {
         packet: Vec<u8>,
         ttl: u32,
         content_type: String,
+        cors: bool,
     ) -> Result<Response<Body>, DoHError> {
         let packet_len = packet.len();
-        let response = Response::builder()
+        let mut response_builder = Response::builder()
             .header(hyper::header::CONTENT_LENGTH, packet_len)
             .header(hyper::header::CONTENT_TYPE, content_type.as_str())
             .header(
@@ -508,9 +512,14 @@ impl DoH {
                     ttl, STALE_IF_ERROR_SECS, STALE_WHILE_REVALIDATE_SECS
                 )
                 .as_str(),
-            )
+            );
+        if cors {
+            response_builder =
+                response_builder.header(hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        }
+        let response = response_builder
             .body(Body::from(packet))
-            .unwrap();
+            .map_err(|_| DoHError::InvalidData)?;
         Ok(response)
     }
 

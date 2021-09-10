@@ -36,6 +36,13 @@ pub fn parse_opts(globals: &mut Globals) {
                 .help("External IP address DoH clients will connect to"),
         )
         .arg(
+            Arg::with_name("public_port")
+                .short("j")
+                .long("public-port")
+                .takes_value(true)
+                .help("External port DoH clients will connect to, if not 443"),
+        )
+        .arg(
             Arg::with_name("listen_address")
                 .short("l")
                 .long("listen-address")
@@ -226,14 +233,22 @@ pub fn parse_opts(globals: &mut Globals) {
         if let Some(public_address) = matches.value_of("public_address") {
             builder = builder.with_address(public_address.to_string());
         }
+        if let Some(public_port) = matches.value_of("public_port") {
+            let public_port = public_port.parse().expect("Invalid public port");
+            builder = builder.with_port(public_port);
+        }
         println!(
             "Test DNS stamp to reach [{}] over DoH: [{}]\n",
             hostname,
             builder.serialize().unwrap()
         );
 
-        let builder =
+        let mut builder =
             dnsstamps::ODoHTargetBuilder::new(hostname.to_string(), globals.path.to_string());
+        if let Some(public_port) = matches.value_of("public_port") {
+            let public_port = public_port.parse().expect("Invalid public port");
+            builder = builder.with_port(public_port);
+        }
         println!(
             "Test DNS stamp to reach [{}] over Oblivious DoH Target: [{}]\n",
             hostname,
