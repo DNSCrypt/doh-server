@@ -30,8 +30,7 @@ where
                 e.kind(),
                 format!(
                     "Unable to load the certificates [{}]: {}",
-                    certs_path_str,
-                    e
+                    certs_path_str, e
                 ),
             )
         })?);
@@ -55,8 +54,7 @@ where
                         e.kind(),
                         format!(
                             "Unable to load the certificate keys [{}]: {}",
-                            certs_keys_path_str,
-                            e
+                            certs_keys_path_str, e
                         ),
                     )
                 })?
@@ -88,22 +86,26 @@ where
         keys.drain(..).map(PrivateKey).collect()
     };
 
-    let mut server_config = None;
-    for certs_key in certs_keys {
-        let server_config_builder = ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth();
-        if let Ok(found_config) = server_config_builder.with_single_cert(certs.clone(), certs_key) {
-            server_config = Some(found_config);
-            break;
-        }
-    }
-    let mut server_config = server_config.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Unable to find a valid certificate and key",
-        )
-    })?;
+    let mut server_config = certs_keys
+        .into_iter()
+        .find_map(|certs_key| {
+            let server_config_builder = ServerConfig::builder()
+                .with_safe_defaults()
+                .with_no_client_auth();
+            if let Ok(found_config) =
+                server_config_builder.with_single_cert(certs.clone(), certs_key)
+            {
+                Some(found_config)
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unable to find a valid certificate and key",
+            )
+        })?;
     server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(TlsAcceptor::from(Arc::new(server_config)))
 }
