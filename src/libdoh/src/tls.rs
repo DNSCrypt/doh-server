@@ -14,7 +14,7 @@ use tokio::{
     sync::mpsc::{self, Receiver},
 };
 use tokio_rustls::{
-    rustls::{internal::pemfile, NoClientAuth, ServerConfig},
+    rustls::{Certificate, PrivateKey, ServerConfig},
     TlsAcceptor,
 };
 
@@ -23,26 +23,28 @@ where
     P: AsRef<Path>,
     P2: AsRef<Path>,
 {
-    let certs = {
+    let certs: Vec<_> = {
         let certs_path_str = certs_path.as_ref().display().to_string();
         let mut reader = BufReader::new(File::open(certs_path).map_err(|e| {
             io::Error::new(
                 e.kind(),
                 format!(
                     "Unable to load the certificates [{}]: {}",
-                    certs_path_str,
-                    e.to_string()
+                    certs_path_str, e
                 ),
             )
         })?);
-        pemfile::certs(&mut reader).map_err(|_| {
+        rustls_pemfile::certs(&mut reader).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Unable to parse the certificates",
             )
         })?
-    };
-    let certs_keys = {
+    }
+    .drain(..)
+    .map(Certificate)
+    .collect();
+    let certs_keys: Vec<_> = {
         let certs_keys_path_str = certs_keys_path.as_ref().display().to_string();
         let encoded_keys = {
             let mut encoded_keys = vec![];
@@ -52,8 +54,7 @@ where
                         e.kind(),
                         format!(
                             "Unable to load the certificate keys [{}]: {}",
-                            certs_keys_path_str,
-                            e.to_string()
+                            certs_keys_path_str, e
                         ),
                     )
                 })?
@@ -61,14 +62,14 @@ where
             encoded_keys
         };
         let mut reader = Cursor::new(encoded_keys);
-        let pkcs8_keys = pemfile::pkcs8_private_keys(&mut reader).map_err(|_| {
+        let pkcs8_keys = rustls_pemfile::pkcs8_private_keys(&mut reader).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Unable to parse the certificates private keys (PKCS8)",
             )
         })?;
         reader.set_position(0);
-        let mut rsa_keys = pemfile::rsa_private_keys(&mut reader).map_err(|_| {
+        let mut rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Unable to parse the certificates private keys (RSA)",
@@ -82,21 +83,30 @@ where
                 "No private keys found - Make sure that they are in PKCS#8/PEM format",
             ));
         }
-        keys
+        keys.drain(..).map(PrivateKey).collect()
     };
-    let mut server_config = ServerConfig::new(NoClientAuth::new());
-    server_config.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
-    let has_valid_cert_and_key = certs_keys.into_iter().any(|certs_key| {
-        server_config
-            .set_single_cert(certs.clone(), certs_key)
-            .is_ok()
-    });
-    if !has_valid_cert_and_key {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Invalid private key for the given certificate",
-        ));
-    }
+
+    let mut server_config = certs_keys
+        .into_iter()
+        .find_map(|certs_key| {
+            let server_config_builder = ServerConfig::builder()
+                .with_safe_defaults()
+                .with_no_client_auth();
+            if let Ok(found_config) =
+                server_config_builder.with_single_cert(certs.clone(), certs_key)
+            {
+                Some(found_config)
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unable to find a valid certificate and key",
+            )
+        })?;
+    server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(TlsAcceptor::from(Arc::new(server_config)))
 }
 
