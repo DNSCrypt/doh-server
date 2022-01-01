@@ -2,7 +2,7 @@
 
 use std::net::{SocketAddr, ToSocketAddrs};
 
-pub(crate) fn verify_sock_addr(arg_val: String) -> Result<(), String> {
+pub(crate) fn verify_sock_addr(arg_val: &str) -> Result<(), String> {
     match arg_val.parse::<SocketAddr>() {
         Ok(_addr) => Ok(()),
         Err(_) => Err(format!(
@@ -12,7 +12,7 @@ pub(crate) fn verify_sock_addr(arg_val: String) -> Result<(), String> {
     }
 }
 
-pub(crate) fn verify_remote_server(arg_val: String) -> Result<(), String> {
+pub(crate) fn verify_remote_server(arg_val: &str) -> Result<(), String> {
     match arg_val.to_socket_addrs() {
         Ok(mut addr_iter) => match addr_iter.next() {
             Some(_) => Ok(()),

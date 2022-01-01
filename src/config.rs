@@ -22,29 +22,29 @@ pub fn parse_opts(globals: &mut Globals) {
     let _ = include_str!("../Cargo.toml");
     let options = app_from_crate!()
         .arg(
-            Arg::with_name("hostname")
-                .short("H")
+            Arg::new("hostname")
+                .short('H')
                 .long("hostname")
                 .takes_value(true)
                 .help("Host name (not IP address) DoH clients will use to connect"),
         )
         .arg(
-            Arg::with_name("public_address")
-                .short("g")
+            Arg::new("public_address")
+                .short('g')
                 .long("public-address")
                 .takes_value(true)
                 .help("External IP address DoH clients will connect to"),
         )
         .arg(
-            Arg::with_name("public_port")
-                .short("j")
+            Arg::new("public_port")
+                .short('j')
                 .long("public-port")
                 .takes_value(true)
                 .help("External port DoH clients will connect to, if not 443"),
         )
         .arg(
-            Arg::with_name("listen_address")
-                .short("l")
+            Arg::new("listen_address")
+                .short('l')
                 .long("listen-address")
                 .takes_value(true)
                 .default_value(LISTEN_ADDRESS)
@@ -52,8 +52,8 @@ pub fn parse_opts(globals: &mut Globals) {
                 .help("Address to listen to"),
         )
         .arg(
-            Arg::with_name("server_address")
-                .short("u")
+            Arg::new("server_address")
+                .short('u')
                 .long("server-address")
                 .takes_value(true)
                 .default_value(SERVER_ADDRESS)
@@ -61,84 +61,84 @@ pub fn parse_opts(globals: &mut Globals) {
                 .help("Address to connect to"),
         )
         .arg(
-            Arg::with_name("local_bind_address")
-                .short("b")
+            Arg::new("local_bind_address")
+                .short('b')
                 .long("local-bind-address")
                 .takes_value(true)
                 .validator(verify_sock_addr)
                 .help("Address to connect from"),
         )
         .arg(
-            Arg::with_name("path")
-                .short("p")
+            Arg::new("path")
+                .short('p')
                 .long("path")
                 .takes_value(true)
                 .default_value(PATH)
                 .help("URI path"),
         )
         .arg(
-            Arg::with_name("max_clients")
-                .short("c")
+            Arg::new("max_clients")
+                .short('c')
                 .long("max-clients")
                 .takes_value(true)
                 .default_value(&max_clients)
                 .help("Maximum number of simultaneous clients"),
         )
         .arg(
-            Arg::with_name("max_concurrent")
-                .short("C")
+            Arg::new("max_concurrent")
+                .short('C')
                 .long("max-concurrent")
                 .takes_value(true)
                 .default_value(&max_concurrent_streams)
                 .help("Maximum number of concurrent requests per client"),
         )
         .arg(
-            Arg::with_name("timeout")
-                .short("t")
+            Arg::new("timeout")
+                .short('t')
                 .long("timeout")
                 .takes_value(true)
                 .default_value(&timeout_sec)
                 .help("Timeout, in seconds"),
         )
         .arg(
-            Arg::with_name("min_ttl")
-                .short("T")
+            Arg::new("min_ttl")
+                .short('T')
                 .long("min-ttl")
                 .takes_value(true)
                 .default_value(&min_ttl)
                 .help("Minimum TTL, in seconds"),
         )
         .arg(
-            Arg::with_name("max_ttl")
-                .short("X")
+            Arg::new("max_ttl")
+                .short('X')
                 .long("max-ttl")
                 .takes_value(true)
                 .default_value(&max_ttl)
                 .help("Maximum TTL, in seconds"),
         )
         .arg(
-            Arg::with_name("err_ttl")
-                .short("E")
+            Arg::new("err_ttl")
+                .short('E')
                 .long("err-ttl")
                 .takes_value(true)
                 .default_value(&err_ttl)
                 .help("TTL for errors, in seconds"),
         )
         .arg(
-            Arg::with_name("disable_keepalive")
-                .short("K")
+            Arg::new("disable_keepalive")
+                .short('K')
                 .long("disable-keepalive")
                 .help("Disable keepalive"),
         )
         .arg(
-            Arg::with_name("disable_post")
-                .short("P")
+            Arg::new("disable_post")
+                .short('P')
                 .long("disable-post")
                 .help("Disable POST queries"),
         )
         .arg(
-            Arg::with_name("allow_odoh_post")
-                .short("O")
+            Arg::new("allow_odoh_post")
+                .short('O')
                 .long("allow-odoh-post")
                 .help("Allow POST queries over ODoH even if they have been disabed for DoH"),
         );
@@ -146,8 +146,8 @@ pub fn parse_opts(globals: &mut Globals) {
     #[cfg(feature = "tls")]
     let options = options
         .arg(
-            Arg::with_name("tls_cert_path")
-                .short("i")
+            Arg::new("tls_cert_path")
+                .short('i')
                 .long("tls-cert-path")
                 .takes_value(true)
                 .help(
@@ -155,8 +155,8 @@ pub fn parse_opts(globals: &mut Globals) {
                 ),
         )
         .arg(
-            Arg::with_name("tls_cert_key_path")
-                .short("I")
+            Arg::new("tls_cert_key_path")
+                .short('I')
                 .long("tls-cert-key-path")
                 .takes_value(true)
                 .help("Path to the PEM-encoded secret keys (only required for built-in TLS)"),
