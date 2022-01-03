@@ -1,4 +1,6 @@
 use crate::odoh::ODoHRotator;
+#[cfg(feature = "odoh-proxy")]
+use crate::odoh_proxy::ODoHProxy;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -32,6 +34,12 @@ pub struct Globals {
     pub allow_odoh_post: bool,
     pub odoh_configs_path: String,
     pub odoh_rotator: Arc<ODoHRotator>,
+
+    #[cfg(feature = "odoh-proxy")]
+    pub odoh_proxy_path: String,
+
+    #[cfg(feature = "odoh-proxy")]
+    pub odoh_proxy: ODoHProxy,
 
     pub runtime_handle: runtime::Handle,
 }

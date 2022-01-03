@@ -3,6 +3,8 @@ pub mod dns;
 mod errors;
 mod globals;
 pub mod odoh;
+#[cfg(feature = "odoh-proxy")]
+pub mod odoh_proxy;
 #[cfg(feature = "tls")]
 mod tls;
 
@@ -109,7 +111,27 @@ impl hyper::service::Service<http::Request<Body>> for DoH {
                 _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
             }
         } else {
-            Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+            #[cfg(not(feature = "odoh-proxy"))]
+            {
+                Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+            }
+            #[cfg(feature = "odoh-proxy")]
+            {
+                if req.uri().path() == globals.odoh_proxy_path {
+                    // Draft:        https://datatracker.ietf.org/doc/html/draft-pauly-dprive-oblivious-doh-06
+                    // Golang impl.: https://github.com/cloudflare/odoh-server-go
+                    // Based on the draft and Golang implementation, only post method is allowed.
+                    match *req.method() {
+                        Method::POST => {
+                            Box::pin(async move { self_inner.serve_odoh_proxy_post(req).await })
+                        }
+                        _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
+                    }
+                }
+                else {
+                    Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+                }
+            }
         }
     }
 }
@@ -226,6 +248,66 @@ impl DoH {
             Err(e) => return http_error(StatusCode::from(e)),
         };
         self.serve_odoh(encrypted_query).await
+    }
+
+    #[cfg(feature = "odoh-proxy")]
+    async fn serve_odoh_proxy(
+        &self,
+        encrypted_query: Vec<u8>,
+        target_uri: &str,
+    ) -> Result<Response<Body>, http::Error> {
+        let encrypted_response = match self
+            .globals
+            .odoh_proxy
+            .forward_to_target(&encrypted_query, target_uri)
+            .await
+        {
+            Ok(resp) => self.build_response(resp, 0u32, DoHType::Oblivious.as_str(), true),
+            Err(e) => return http_error(e),
+        };
+
+        match encrypted_response {
+            Ok(resp) => Ok(resp),
+            Err(e) => http_error(StatusCode::from(e)),
+        }
+    }
+
+    #[cfg(feature = "odoh-proxy")]
+    async fn serve_odoh_proxy_post(
+        &self,
+        req: Request<Body>,
+    ) -> Result<Response<Body>, http::Error> {
+        if self.globals.disable_post && !self.globals.allow_odoh_post {
+            return http_error(StatusCode::METHOD_NOT_ALLOWED);
+        }
+        // Draft:        https://datatracker.ietf.org/doc/html/draft-pauly-dprive-oblivious-doh-06
+        // Golang impl.: https://github.com/cloudflare/odoh-server-go
+        // The following follows the Golang implementation, which is different from the draft.
+        // In the draft, single endpoint, i.e., /dns-query, can accept proxy and target messages,
+        // and works as a proxy only when '?targethost' and '?tagetpath' exist in given uri query.
+        // However, in Golang implementation, proxy and target endpoints are separated.
+        match Self::parse_content_type(&req) {
+            Ok(DoHType::Oblivious) => {
+                let http_query = req.uri().query().unwrap_or("");
+                let target_uri = match odoh_proxy::target_uri_from_query_string(http_query) {
+                    Some(uri) => uri,
+                    _ => return http_error(StatusCode::BAD_REQUEST),
+                };
+                let encrypted_query = match self.read_body(req.into_body()).await {
+                    Ok(q) => {
+                        if q.len() == 0 {
+                            return http_error(StatusCode::BAD_REQUEST);
+                        }
+                        q
+                    },
+                    Err(e) => return http_error(StatusCode::from(e)),
+                };
+
+                self.serve_odoh_proxy(encrypted_query, &target_uri).await
+            },
+            Ok(_) => http_error(StatusCode::UNSUPPORTED_MEDIA_TYPE),
+            Err(err_response) => Ok(err_response)
+        }
     }
 
     async fn serve_odoh_configs(&self) -> Result<Response<Body>, http::Error> {
@@ -483,6 +565,9 @@ impl DoH {
             .map_err(DoHError::Io)?;
         let path = &self.globals.path;
 
+        #[cfg(feature = "odoh-proxy")]
+        let odoh_proxy_path = &self.globals.odoh_proxy_path;
+
         let tls_enabled: bool;
         #[cfg(not(feature = "tls"))]
         {
@@ -494,9 +579,13 @@ impl DoH {
                 self.globals.tls_cert_path.is_some() && self.globals.tls_cert_key_path.is_some();
         }
         if tls_enabled {
-            println!("Listening on https://{}{}", listen_address, path);
+            println!("ODoH/DoH Server: Listening on https://{}{}", listen_address, path);
+            #[cfg(feature = "odoh-proxy")]
+            println!("ODoH Proxy     : Listening on https://{}{}", listen_address, odoh_proxy_path);
         } else {
-            println!("Listening on http://{}{}", listen_address, path);
+            println!("ODoH/DoH Server: Listening on http://{}{}", listen_address, path);
+            #[cfg(feature = "odoh-proxy")]
+            println!("ODoH Proxy     : Listening on http://{}{}", listen_address, odoh_proxy_path);
         }
 
         let mut server = Http::new();

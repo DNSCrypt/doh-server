@@ -26,6 +26,12 @@ cargo install doh-proxy
 cargo install doh-proxy --no-default-features
 ```
 
+* With Oblivious DoH Proxy function (**for testing pupose**):
+
+```sh
+cargo install doh-proxy --features=doh-proxy
+```
+
 ## Usage
 
 ```text
@@ -33,7 +39,7 @@ USAGE:
     doh-proxy [FLAGS] [OPTIONS]
 
 FLAGS:
-    -O, --allow-odoh-post      Allow POST queries over ODoH even if they have been disabed for DoH
+    -O, --allow-odoh-post      Allow POST queries over ODoH even if they have been disabled for DoH
     -K, --disable-keepalive    Disable keepalive
     -P, --disable-post         Disable POST queries
     -h, --help                 Prints help information
@@ -48,6 +54,7 @@ OPTIONS:
     -C, --max-concurrent <max_concurrent>            Maximum number of concurrent requests per client [default: 16]
     -X, --max-ttl <max_ttl>                          Maximum TTL, in seconds [default: 604800]
     -T, --min-ttl <min_ttl>                          Minimum TTL, in seconds [default: 10]
+    -q, --odoh-proxy-path <odoh_proxy_path>          ODoH proxy URI path [default: /proxy]
     -p, --path <path>                                URI path [default: /dns-query]
     -g, --public-address <public_address>            External IP address DoH clients will connect to
     -j, --public-port <public_port>                  External port DoH clients will connect to, if not 443
@@ -113,11 +120,13 @@ Unless the front-end is a CDN, an ideal setup is to use `doh-proxy` behind `Encr
 
 Oblivious DoH is similar to Anonymized DNSCrypt, but for DoH. It requires relays, but also upstream DoH servers that support the protocol.
 
-This proxy supports ODoH termination (not relaying) out of the box.
+This proxy supports ODoH termination out of the box.
 
 However, ephemeral keys are currently only stored in memory. In a load-balanced configuration, sticky sessions must be used.
 
-Currently available ODoH relays only use `POST` queries.
+This also also provides ODoH relaying (Oblivious Proxy) of naive implementation, which is **for testing purposes only**. Please do not deploy the relaying function AS-IS. You need to carefully consider the performance and security issues when you deploy ODoH relays. Further, the relaying protocol is not fully fixed yet in the IETF draft.
+
+As currently available ODoH relays only use `POST` queries, this proxy accepts and issues `POST` queries both in ODoH target and relay functions.
 So, `POST` queries have been disabled for regular DoH queries, accepting them is required to be compatible with ODoH relays.
 
 This can be achieved with the `--allow-odoh-post` command-line switch.

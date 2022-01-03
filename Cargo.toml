@@ -14,6 +14,7 @@ readme = "README.md"
 [features]
 default = ["tls"]
 tls = ["libdoh/tls"]
+odoh-proxy = ["libdoh/odoh-proxy"]
 
 [dependencies]
 libdoh = { path = "src/libdoh", version = "0.9.0", default-features = false }

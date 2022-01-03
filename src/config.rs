@@ -140,7 +140,7 @@ pub fn parse_opts(globals: &mut Globals) {
             Arg::new("allow_odoh_post")
                 .short('O')
                 .long("allow-odoh-post")
-                .help("Allow POST queries over ODoH even if they have been disabed for DoH"),
+                .help("Allow POST queries over ODoH even if they have been disabled for DoH"),
         );
 
     #[cfg(feature = "tls")]
@@ -160,6 +160,17 @@ pub fn parse_opts(globals: &mut Globals) {
                 .long("tls-cert-key-path")
                 .takes_value(true)
                 .help("Path to the PEM-encoded secret keys (only required for built-in TLS)"),
+        );
+
+    #[cfg(feature = "odoh-proxy")]
+    let options = options
+        .arg(
+            Arg::with_name("odoh_proxy_path")
+                .short("q")
+                .long("odoh-proxy-path")
+                .takes_value(true)
+                .default_value(ODOH_PROXY_PATH)
+                .help("ODoH proxy URI path"),
         );
 
     let matches = options.get_matches();
@@ -207,6 +218,15 @@ pub fn parse_opts(globals: &mut Globals) {
             .or_else(|| globals.tls_cert_path.clone());
     }
 
+    #[cfg(feature = "odoh-proxy")]
+    {
+        globals.odoh_proxy_path = matches.value_of("odoh_proxy_path").unwrap().to_string();
+        if !globals.odoh_proxy_path.starts_with('/') {
+            globals.odoh_proxy_path = format!("/{}", globals.odoh_proxy_path);
+        }
+        globals.odoh_proxy = libdoh::odoh_proxy::ODoHProxy::new(globals.timeout).unwrap();
+    }
+
     if let Some(hostname) = matches.value_of("hostname") {
         let mut builder =
             dnsstamps::DoHBuilder::new(hostname.to_string(), globals.path.to_string());
@@ -230,10 +250,21 @@ pub fn parse_opts(globals: &mut Globals) {
             builder = builder.with_port(public_port);
         }
         println!(
-            "Test DNS stamp to reach [{}] over Oblivious DoH: [{}]\n",
+            "Test DNS stamp to reach [{}] over Oblivious DoH Target: [{}]\n",
             hostname,
             builder.serialize().unwrap()
         );
+
+        #[cfg(feature = "odoh-proxy")]
+        {
+            let builder =
+                dnsstamps::ODoHRelayBuilder::new(hostname.to_string(), globals.odoh_proxy_path.to_string());
+            println!(
+                "Test DNS stamp to reach [{}] over Oblivious DoH Proxy: [{}]\n",
+                hostname,
+                builder.serialize().unwrap()
+            );
+        }
 
         println!("Check out https://dnscrypt.info/stamps/ to compute the actual stamps.\n")
     } else {
