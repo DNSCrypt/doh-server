@@ -20,7 +20,7 @@ pub fn parse_opts(globals: &mut Globals) {
     let err_ttl = ERR_TTL.to_string();
 
     let _ = include_str!("../Cargo.toml");
-    let options = app_from_crate!()
+    let options = command!()
         .arg(
             Arg::new("hostname")
                 .short('H')
