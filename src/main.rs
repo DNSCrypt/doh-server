@@ -8,16 +8,16 @@ mod config;
 mod constants;
 mod utils;
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
+use std::time::Duration;
+
+use libdoh::odoh::ODoHRotator;
+use libdoh::reexports::tokio;
 use libdoh::*;
 
 use crate::config::*;
 use crate::constants::*;
-
-use libdoh::odoh::ODoHRotator;
-use libdoh::reexports::tokio;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
-use std::time::Duration;
 
 fn main() {
     let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();

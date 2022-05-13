@@ -1,13 +1,12 @@
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
+#[cfg(feature = "tls")]
+use std::path::PathBuf;
+use std::time::Duration;
+
+use clap::Arg;
 use libdoh::*;
 
 use crate::constants::*;
-
-use clap::Arg;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
-use std::time::Duration;
-
-#[cfg(feature = "tls")]
-use std::path::PathBuf;
 
 pub fn parse_opts(globals: &mut Globals) {
     use crate::utils::{verify_remote_server, verify_sock_addr};
@@ -237,6 +236,9 @@ pub fn parse_opts(globals: &mut Globals) {
 
         println!("Check out https://dnscrypt.info/stamps/ to compute the actual stamps.\n")
     } else {
-        println!("Please provide a fully qualified hostname (-H <hostname> command-line option) to get test DNS stamps for your server.\n");
+        println!(
+            "Please provide a fully qualified hostname (-H <hostname> command-line option) to get \
+             test DNS stamps for your server.\n"
+        );
     }
 }
