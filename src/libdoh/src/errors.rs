@@ -1,5 +1,6 @@
-use hyper::StatusCode;
 use std::io;
+
+use hyper::StatusCode;
 
 #[derive(Debug)]
 pub enum DoHError {

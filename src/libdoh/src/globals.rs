@@ -1,12 +1,13 @@
-use crate::odoh::ODoHRotator;
 use std::net::SocketAddr;
+#[cfg(feature = "tls")]
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
 use tokio::runtime;
 
-#[cfg(feature = "tls")]
-use std::path::PathBuf;
+use crate::odoh::ODoHRotator;
 
 #[derive(Debug)]
 pub struct Globals {

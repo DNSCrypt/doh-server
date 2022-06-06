@@ -1,14 +1,11 @@
-use crate::constants::CERTS_WATCH_DELAY_SECS;
-use crate::errors::*;
-use crate::{DoH, LocalExecutor};
-
-use futures::{future::FutureExt, join, select};
-use hyper::server::conn::Http;
 use std::fs::File;
 use std::io::{self, BufReader, Cursor, Read};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+
+use futures::{future::FutureExt, join, select};
+use hyper::server::conn::Http;
 use tokio::{
     net::TcpListener,
     sync::mpsc::{self, Receiver},
@@ -17,6 +14,10 @@ use tokio_rustls::{
     rustls::{Certificate, PrivateKey, ServerConfig},
     TlsAcceptor,
 };
+
+use crate::constants::CERTS_WATCH_DELAY_SECS;
+use crate::errors::*;
+use crate::{DoH, LocalExecutor};
 
 pub fn create_tls_acceptor<P, P2>(certs_path: P, certs_keys_path: P2) -> io::Result<TlsAcceptor>
 where

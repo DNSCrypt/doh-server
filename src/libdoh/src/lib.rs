@@ -6,9 +6,10 @@ pub mod odoh;
 #[cfg(feature = "tls")]
 mod tls;
 
-use crate::constants::*;
-pub use crate::errors::*;
-pub use crate::globals::*;
+use std::net::SocketAddr;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
 
 use byteorder::{BigEndian, ByteOrder};
 use futures::prelude::*;
@@ -16,13 +17,13 @@ use futures::task::{Context, Poll};
 use hyper::http;
 use hyper::server::conn::Http;
 use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode};
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, UdpSocket};
 use tokio::runtime;
+
+use crate::constants::*;
+pub use crate::errors::*;
+pub use crate::globals::*;
 
 pub mod reexports {
     pub use tokio;

@@ -1,16 +1,17 @@
-use crate::constants::ODOH_KEY_ROTATION_SECS;
-use crate::errors::DoHError;
-use arc_swap::ArcSwap;
+use std::fmt;
+use std::sync::Arc;
+use std::time::Duration;
 
+use arc_swap::ArcSwap;
 use odoh_rs::{
     Deserialize, ObliviousDoHConfig, ObliviousDoHConfigs, ObliviousDoHKeyPair, ObliviousDoHMessage,
     ObliviousDoHMessagePlaintext, OdohSecret, ResponseNonce, Serialize,
 };
 use rand::Rng;
-use std::fmt;
-use std::sync::Arc;
-use std::time::Duration;
 use tokio::runtime;
+
+use crate::constants::ODOH_KEY_ROTATION_SECS;
+use crate::errors::DoHError;
 
 #[derive(Clone)]
 pub struct ODoHPublicKey {
