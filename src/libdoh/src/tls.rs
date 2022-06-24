@@ -169,6 +169,6 @@ impl DoH {
             }
             Ok::<_, DoHError>(())
         };
-        return join!(https_service, cert_service).0;
+        join!(https_service, cert_service).0
     }
 }
