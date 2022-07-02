@@ -25,7 +25,7 @@ hpke = "0.5.1"
 hyper = { version = "0.14.19", default-features = false, features = ["server", "http1", "http2", "stream"] }
 odoh-rs = "1.0.0-alpha.1"
 rand = "0.8.5"
-tokio = { version = "1.19.2", features = ["net", "rt-multi-thread", "parking_lot", "time", "sync"] }
+tokio = { version = "1.19.2", features = ["net", "rt-multi-thread", "time", "sync"] }
 tokio-rustls = { version = "0.23.4", features = ["early-data"], optional = true }
 rustls-pemfile = "1.0.0"
 
