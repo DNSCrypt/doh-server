@@ -1,6 +1,6 @@
 [package]
 name = "libdoh"
-version = "0.9.4"
+version = "0.9.5"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "DoH and Oblivious DoH library for the rust-doh app"
 keywords = ["dns","https","doh","odoh","proxy"]
@@ -21,11 +21,10 @@ base64 = "0.13.0"
 byteorder = "1.4.3"
 bytes = "1.2.1"
 futures = "0.3.24"
-hpke = "0.5.1"
 hyper = { version = "0.14.20", default-features = false, features = ["server", "http1", "http2", "stream"] }
-odoh-rs = "1.0.0-alpha.1"
+odoh-rs = "1.0.0"
 rand = "0.8.5"
-tokio = { version = "1.21.1", features = ["net", "rt-multi-thread", "time", "sync"] }
+tokio = { version = "1.21.2", features = ["net", "rt-multi-thread", "time", "sync"] }
 tokio-rustls = { version = "0.23.4", features = ["early-data"], optional = true }
 rustls-pemfile = "1.0.1"
 
