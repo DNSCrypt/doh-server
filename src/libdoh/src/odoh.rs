@@ -115,7 +115,7 @@ impl ODoHRotator {
                     Ok(key) => {
                         current_key.store(Arc::new(key));
                     }
-                    Err(e) => eprintln!("ODoH key rotation error: {}", e),
+                    Err(e) => eprintln!("ODoH key rotation error: {e}"),
                 };
             }
         });

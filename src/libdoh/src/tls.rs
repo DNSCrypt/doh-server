@@ -30,8 +30,7 @@ where
             io::Error::new(
                 e.kind(),
                 format!(
-                    "Unable to load the certificates [{}]: {}",
-                    certs_path_str, e
+                    "Unable to load the certificates [{certs_path_str}]: {e}"
                 ),
             )
         })?);
@@ -54,8 +53,7 @@ where
                     io::Error::new(
                         e.kind(),
                         format!(
-                            "Unable to load the certificate keys [{}]: {}",
-                            certs_keys_path_str, e
+                            "Unable to load the certificate keys [{certs_keys_path_str}]: {e}"
                         ),
                     )
                 })?
@@ -163,7 +161,7 @@ impl DoH {
                             break;
                         }
                     }
-                    Err(e) => eprintln!("TLS certificates error: {}", e),
+                    Err(e) => eprintln!("TLS certificates error: {e}"),
                 }
                 tokio::time::sleep(Duration::from_secs(CERTS_WATCH_DELAY_SECS.into())).await;
             }

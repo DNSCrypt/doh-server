@@ -29,6 +29,12 @@ pub mod reexports {
     pub use tokio;
 }
 
+const BASE64_URL_SAFE_NO_PAD: base64::engine::fast_portable::FastPortable =
+    base64::engine::fast_portable::FastPortable::from(
+        &base64::alphabet::URL_SAFE,
+        base64::engine::fast_portable::NO_PAD,
+    );
+
 #[derive(Clone, Debug)]
 struct DnsResponse {
     packet: Vec<u8>,
@@ -162,7 +168,7 @@ impl DoH {
             }
         }
         let query = match question_str.and_then(|question_str| {
-            base64::decode_config(question_str, base64::URL_SAFE_NO_PAD).ok()
+            base64::decode_engine(question_str, &BASE64_URL_SAFE_NO_PAD).ok()
         }) {
             Some(query) => query,
             _ => return None,
@@ -427,8 +433,7 @@ impl DoH {
             .header(
                 hyper::header::CACHE_CONTROL,
                 format!(
-                    "max-age={}, stale-if-error={}, stale-while-revalidate={}",
-                    ttl, STALE_IF_ERROR_SECS, STALE_WHILE_REVALIDATE_SECS
+                    "max-age={ttl}, stale-if-error={STALE_IF_ERROR_SECS}, stale-while-revalidate={STALE_WHILE_REVALIDATE_SECS}"
                 )
                 .as_str(),
             );
@@ -495,9 +500,9 @@ impl DoH {
                 self.globals.tls_cert_path.is_some() && self.globals.tls_cert_key_path.is_some();
         }
         if tls_enabled {
-            println!("Listening on https://{}{}", listen_address, path);
+            println!("Listening on https://{listen_address}{path}");
         } else {
-            println!("Listening on http://{}{}", listen_address, path);
+            println!("Listening on http://{listen_address}{path}");
         }
 
         let mut server = Http::new();

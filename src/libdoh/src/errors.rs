@@ -27,9 +27,9 @@ impl std::fmt::Display for DoHError {
             DoHError::UpstreamIssue => write!(fmt, "Upstream error"),
             DoHError::UpstreamTimeout => write!(fmt, "Upstream timeout"),
             DoHError::StaleKey => write!(fmt, "Stale key material"),
-            DoHError::Hyper(e) => write!(fmt, "HTTP error: {}", e),
-            DoHError::Io(e) => write!(fmt, "IO error: {}", e),
-            DoHError::ODoHConfigError(e) => write!(fmt, "ODoH config error: {}", e),
+            DoHError::Hyper(e) => write!(fmt, "HTTP error: {e}"),
+            DoHError::Io(e) => write!(fmt, "IO error: {e}"),
+            DoHError::ODoHConfigError(e) => write!(fmt, "ODoH config error: {e}"),
             DoHError::TooManyTcpSessions => write!(fmt, "Too many TCP sessions"),
         }
     }
