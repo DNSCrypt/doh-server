@@ -89,7 +89,7 @@ jobs:
           asset_content_type: application/x-debian-package
 
       - name: Upload tarball for linux-x86_64
-        id: upload-release-asset-tarball
+        id: upload-release-asset-tarball-linux-x86_64
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,7 +100,7 @@ jobs:
           asset_content_type: application/x-tar
 
       - name: Upload tarball for linux-aarch64
-        id: upload-release-asset-tarball
+        id: upload-release-asset-tarball-linux-aarch64
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,7 +111,7 @@ jobs:
           asset_content_type: application/x-tar
 
       - name: Upload tarball for windows-x86_64
-        id: upload-release-asset-tarball
+        id: upload-release-asset-tarball-windows-x86_64
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
