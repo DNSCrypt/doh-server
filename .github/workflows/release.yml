@@ -46,7 +46,7 @@ jobs:
 
       - name: Release build Linux-aarch64
         run: |
-          rustup target add
+          rustup target add aarch64-unknown-linux-musl
           env RUSTFLAGS="-C link-arg=-s" cargo zigbuild --release --target aarch64-unknown-linux-musl
           mkdir doh-proxy
           mv target/aarch64-unknown-linux-musl/release/doh-proxy doh-proxy/
