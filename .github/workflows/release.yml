@@ -14,7 +14,7 @@ jobs:
         id: get_version
         run: echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
 
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v3
 
       - uses: goto-bus-stop/setup-zig@v2
 
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload Debian package
         id: upload-release-asset-debian
-        uses: actions/upload-release-asset@v2
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload tarball for linux-x86_64
         id: upload-release-asset-tarball-linux-x86_64
-        uses: actions/upload-release-asset@v2
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload tarball for linux-aarch64
         id: upload-release-asset-tarball-linux-aarch64
-        uses: actions/upload-release-asset@v2
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -114,7 +114,7 @@ jobs:
 
       - name: Upload tarball for windows-x86_64
         id: upload-release-asset-tarball-windows-x86_64
-        uses: actions/upload-release-asset@v2
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
