@@ -61,7 +61,7 @@ jobs:
           mkdir doh-proxy
           mv target/x86_64-pc-windows-gnu/release/doh-proxy.exe doh-proxy/
           cp README.md localhost.pem doh-proxy/
-          zip -9 doh-proxy_${{ steps.get_version.outputs.VERSION }}_windows-x86_64.zip doh-proxy
+          zip -9 -r doh-proxy_${{ steps.get_version.outputs.VERSION }}_windows-x86_64.zip doh-proxy
           rm -fr doh-proxy
 
       - name: Debian package
