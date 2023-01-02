@@ -16,6 +16,8 @@ jobs:
 
       - uses: actions/checkout@master
 
+      - uses: goto-bus-stop/setup-zig@v2
+
       - uses: hecrj/setup-rust-action@master
         with:
           rust-version: stable
