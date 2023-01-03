@@ -37,7 +37,7 @@ jobs:
       - name: Release build Linux-x86-64
         run: |
           rustup target add x86_64-unknown-linux-musl
-          env RUSTFLAGS="-C link-arg=-s" cargo zigbuild --release --target x86_64-unknown-linux-musl
+          env RUSTFLAGS="-C strip=symbols" cargo zigbuild --release --target x86_64-unknown-linux-musl
           mkdir doh-proxy
           mv target/x86_64-unknown-linux-musl/release/doh-proxy doh-proxy/
           cp README.md localhost.pem doh-proxy/
@@ -47,7 +47,7 @@ jobs:
       - name: Release build Linux-aarch64
         run: |
           rustup target add aarch64-unknown-linux-musl
-          env RUSTFLAGS="-C link-arg=-s" cargo zigbuild --release --target aarch64-unknown-linux-musl
+          env RUSTFLAGS="-C strip=symbols" cargo zigbuild --release --target aarch64-unknown-linux-musl
           mkdir doh-proxy
           mv target/aarch64-unknown-linux-musl/release/doh-proxy doh-proxy/
           cp README.md localhost.pem doh-proxy/
@@ -57,7 +57,7 @@ jobs:
       - name: Release build Windows-x86_64
         run: |
           rustup target add x86_64-pc-windows-gnu
-          env RUSTFLAGS="-C link-arg=-s" cargo zigbuild --release --target x86_64-pc-windows-gnu
+          env RUSTFLAGS="-C strip=symbols" cargo zigbuild --release --target x86_64-pc-windows-gnu
           mkdir doh-proxy
           mv target/x86_64-pc-windows-gnu/release/doh-proxy.exe doh-proxy/
           cp README.md localhost.pem doh-proxy/
