@@ -64,19 +64,12 @@ jobs:
           zip -9 -r doh-proxy_${{ steps.get_version.outputs.VERSION }}_windows-x86_64.zip doh-proxy
           rm -fr doh-proxy
 
-      - name: Debian package
+      - name: Debian packages
         run: |
           rustup target add x86_64-unknown-linux-musl
-          env \
-            RUSTFLAGS="-C lto=yes -C strip=symbols" \
-            __CARGO_TEST_CHANNEL_OVERRIDE_DO_NOT_USE_THIS=nightly \
-            CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST=true \
-            CARGO_TARGET_APPLIES_TO_HOST=false \
-            RANLIB="zig ranlib" \
-            CARGO_LINKER="zig cc --target=x86_64-linux-musl" \
-            CC="zig cc --target=x86_64-linux-musl" \
-            CXX="zig c++ --target=x86_64-linux-musl" \
-            cargo deb --target=x86_64-unknown-linux-musl
+          env RUSTFLAGS="-C strip=symbols" cargo deb --no-strip --cargo-build=zigbuild --target=x86_64-unknown-linux-musl
+          rustup target add aarch64-unknown-linux-musl
+          env RUSTFLAGS="-C strip=symbols" cargo deb --no-strip --cargo-build=zigbuild --target=aarch64-unknown-linux-musl
 
       - name: Create release
         id: create_release
@@ -89,7 +82,7 @@ jobs:
           draft: true
           prerelease: false
 
-      - name: Upload Debian package
+      - name: Upload Debian package for x86_64
         id: upload-release-asset-debian
         uses: actions/upload-release-asset@v1
         env:
@@ -97,7 +90,20 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_name: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_amd64.deb"
+          asset_path: "target/x86_64-unknown-linux-musl/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}_amd64.deb"
           asset_path: "target/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}_amd64.deb"
+          asset_content_type: application/x-debian-package
+
+      - name: Upload Debian package for aarch64
+        id: upload-release-asset-debian
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_name: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_aarch64.deb"
+          asset_path: "target/aarch64-unknown-linux-musl/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}_aarch64.deb"
+          asset_path: "target/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}_aarch64.deb"
           asset_content_type: application/x-debian-package
 
       - name: Upload tarball for linux-x86_64
