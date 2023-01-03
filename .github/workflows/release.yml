@@ -66,7 +66,17 @@ jobs:
 
       - name: Debian package
         run: |
-          cargo deb
+          rustup target add x86_64-unknown-linux-musl
+          env \
+            RUSTFLAGS="-C lto=yes -C strip=symbols" \
+            __CARGO_TEST_CHANNEL_OVERRIDE_DO_NOT_USE_THIS=nightly \
+            CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST=true \
+            CARGO_TARGET_APPLIES_TO_HOST=false \
+            RANLIB="zig ranlib" \
+            CARGO_LINKER="zig cc --target=x86_64-linux-musl" \
+            CC="zig cc --target=x86_64-linux-musl" \
+            CXX="zig c++ --target=x86_64-linux-musl" \
+            cargo deb --target=x86_64-unknown-linux-musl
 
       - name: Create release
         id: create_release
