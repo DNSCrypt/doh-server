@@ -1,4 +1,4 @@
-# doh-proxy
+# DoH Server (and ODoH server)
 
 A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 
