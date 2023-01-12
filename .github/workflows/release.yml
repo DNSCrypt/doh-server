@@ -83,7 +83,7 @@ jobs:
           prerelease: false
 
       - name: Upload Debian package for x86_64
-        id: upload-release-asset-debian
+        id: upload-release-asset-debian-x86_64
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -94,7 +94,7 @@ jobs:
           asset_content_type: application/x-debian-package
 
       - name: Upload Debian package for aarch64
-        id: upload-release-asset-debian
+        id: upload-release-asset-debian-aarch64
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
