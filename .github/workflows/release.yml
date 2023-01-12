@@ -93,17 +93,6 @@ jobs:
           asset_path: "target/x86_64-unknown-linux-musl/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}_amd64.deb"
           asset_content_type: application/x-debian-package
 
-      - name: Upload Debian package for aarch64
-        id: upload-release-asset-debian-aarch64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_name: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_aarch64.deb"
-          asset_path: "target/aarch64-unknown-linux-musl/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}_aarch64.deb"
-          asset_content_type: application/x-debian-package
-
       - name: Upload tarball for linux-x86_64
         id: upload-release-asset-tarball-linux-x86_64
         uses: actions/upload-release-asset@v1
