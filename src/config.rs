@@ -232,10 +232,10 @@ pub fn parse_opts(globals: &mut Globals) {
     #[cfg(feature = "tls")]
     {
         globals.tls_cert_path = matches
-            .get_one::<PathBuf>("tls_cert_path")
+            .get_one::<String>("tls_cert_path")
             .map(PathBuf::from);
         globals.tls_cert_key_path = matches
-            .get_one::<PathBuf>("tls_cert_key_path")
+            .get_one::<String>("tls_cert_key_path")
             .map(PathBuf::from)
             .or_else(|| globals.tls_cert_path.clone());
     }
