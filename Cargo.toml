@@ -1,6 +1,6 @@
 [package]
 name = "doh-proxy"
-version = "0.9.6"
+version = "0.9.7"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "A DNS-over-HTTPS (DoH) and ODoH (Oblivious DoH) proxy"
 keywords = ["dns", "https", "doh", "odoh", "proxy"]
@@ -16,10 +16,10 @@ default = ["tls"]
 tls = ["libdoh/tls"]
 
 [dependencies]
-libdoh = { path = "src/libdoh", version = "0.9.6", default-features = false }
+libdoh = { path = "src/libdoh", version = "0.9.7", default-features = false }
 clap = { version = "4", features = ["std", "cargo", "wrap_help", "string"] }
 dnsstamps = "0.1.9"
-mimalloc = { version = "0.1.32", default-features = false }
+mimalloc = { version = "0.1.34", default-features = false }
 
 [package.metadata.deb]
 extended-description = """\
