@@ -1,4 +1,4 @@
-# DoH Server (and ODoH server)
+# ![DoH server (and ODoH - Oblivious DoH server)](logo.png)
 
 A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 
