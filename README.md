@@ -70,7 +70,7 @@ Here, `doh.example.com` is the host name (which should match a name included in 
 
 ## HTTP/2 termination
 
-The recommended way to use `doh-proxy` is to use a TLS termination proxy (such as [hitch](https://github.com/varnish/hitch) or [relayd](https://bsd.plumbing/about.html)), a CDN or a web server with proxying abilities as a front-end.
+The recommended way to use `doh-proxy` is to use a TLS termination proxy (such as [hitch](https://github.com/varnish/hitch) or [relayd](https://man.openbsd.org/relayd.8)), a CDN or a web server with proxying abilities as a front-end.
 
 That way, the DoH service can be exposed as a virtual host, sharing the same IP addresses as existing websites.
 
