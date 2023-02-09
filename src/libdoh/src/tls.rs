@@ -29,9 +29,7 @@ where
         let mut reader = BufReader::new(File::open(certs_path).map_err(|e| {
             io::Error::new(
                 e.kind(),
-                format!(
-                    "Unable to load the certificates [{certs_path_str}]: {e}"
-                ),
+                format!("Unable to load the certificates [{certs_path_str}]: {e}"),
             )
         })?);
         rustls_pemfile::certs(&mut reader).map_err(|_| {
@@ -52,9 +50,7 @@ where
                 .map_err(|e| {
                     io::Error::new(
                         e.kind(),
-                        format!(
-                            "Unable to load the certificate keys [{certs_keys_path_str}]: {e}"
-                        ),
+                        format!("Unable to load the certificate keys [{certs_keys_path_str}]: {e}"),
                     )
                 })?
                 .read_to_end(&mut encoded_keys)?;

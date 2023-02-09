@@ -433,7 +433,8 @@ impl DoH {
             .header(
                 hyper::header::CACHE_CONTROL,
                 format!(
-                    "max-age={ttl}, stale-if-error={STALE_IF_ERROR_SECS}, stale-while-revalidate={STALE_WHILE_REVALIDATE_SECS}"
+                    "max-age={ttl}, stale-if-error={STALE_IF_ERROR_SECS}, \
+                     stale-while-revalidate={STALE_WHILE_REVALIDATE_SECS}"
                 )
                 .as_str(),
             );
