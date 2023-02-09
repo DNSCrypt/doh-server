@@ -68,13 +68,13 @@ doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -g 233.252.0.5
 
 Here, `doh.example.com` is the host name (which should match a name included in the TLS certificate), `127.0.0.1:53` is the address of the DNS resolver, and `233.252.0.5` is the public IP address of the DoH server.
 
-## HTTP/2 termination
+## HTTP/2 and HTTP/3 termination
 
 The recommended way to use `doh-proxy` is to use a TLS termination proxy (such as [hitch](https://github.com/varnish/hitch) or [relayd](https://man.openbsd.org/relayd.8)), a CDN or a web server with proxying abilities as a front-end.
 
 That way, the DoH service can be exposed as a virtual host, sharing the same IP addresses as existing websites.
 
-If `doh-proxy` and the HTTP/2 front-end run on the same host, using the HTTP protocol to communicate between both is fine.
+If `doh-proxy` and the HTTP/2 (/ HTTP/3) front-end run on the same host, using the HTTP protocol to communicate between both is fine.
 
 If both are on distinct networks, such as when using a CDN, `doh-proxy` can handle HTTPS requests, provided that it was compiled with the `tls` feature.
 
@@ -136,7 +136,7 @@ This can be achieved with the `--allow-odoh-post` command-line switch.
 * When using DoH, DNS stamps should include a resolver IP address in order to remove a dependency on non-encrypted, non-authenticated, easy-to-block resolvers.
 * Unlike DNSCrypt where users must explicitly trust a DNS server's public key, the security of DoH relies on traditional public Certificate Authorities. Additional root certificates (required by governments, security software, enterprise gateways) installed on a client immediately make DoH vulnerable to MITM. In order to prevent this, DNS stamps should include the hash of the parent certificate.
 * TLS certificates are tied to host names. But domains expire, get reassigned and switch hands all the time. If a domain originally used for a DoH service gets a new, possibly malicious owner, clients still configured to use the service will blindly keep trusting it if the CA is the same. As a mitigation, the CA should sign an intermediate certificate (the only one present in the stamp), itself used to sign the name used by the DoH server. While commercial CAs offer this, Let's Encrypt currently doesn't.
-* Make sure that the front-end supports HTTP/2 and TLS 1.3.
+* Make sure that the front-end supports HTTP/2 and TLS 1.3, and optionally HTTP/3.
 * Internal DoH servers still require TLS certificates. So, if you are planning to deploy an internal server, you need to set up an internal CA, or add self-signed certificates to every single client.
 
 ## Example usage with `encrypted-dns-server`
