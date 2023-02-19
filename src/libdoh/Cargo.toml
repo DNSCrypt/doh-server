@@ -17,7 +17,7 @@ tls = ["tokio-rustls"]
 [dependencies]
 anyhow = "1.0.69"
 arc-swap = "1.6.0"
-base64 = "0.20.0"
+base64 = "0.21.0"
 byteorder = "1.4.3"
 bytes = "1.4.0"
 futures = "0.3.26"
