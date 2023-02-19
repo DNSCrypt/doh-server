@@ -11,6 +11,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::engine::Engine;
 use byteorder::{BigEndian, ByteOrder};
 use futures::prelude::*;
 use futures::task::{Context, Poll};
@@ -29,10 +30,12 @@ pub mod reexports {
     pub use tokio;
 }
 
-const BASE64_URL_SAFE_NO_PAD: base64::engine::fast_portable::FastPortable =
-    base64::engine::fast_portable::FastPortable::from(
+const BASE64_URL_SAFE_NO_PAD: base64::engine::GeneralPurpose =
+    base64::engine::general_purpose::GeneralPurpose::new(
         &base64::alphabet::URL_SAFE,
-        base64::engine::fast_portable::NO_PAD,
+        base64::engine::general_purpose::GeneralPurposeConfig::new()
+            .with_encode_padding(false)
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
     );
 
 #[derive(Clone, Debug)]
@@ -167,9 +170,9 @@ impl DoH {
                 return None;
             }
         }
-        let query = match question_str.and_then(|question_str| {
-            base64::decode_engine(question_str, &BASE64_URL_SAFE_NO_PAD).ok()
-        }) {
+        let query = match question_str
+            .and_then(|question_str| BASE64_URL_SAFE_NO_PAD.decode(question_str).ok())
+        {
             Some(query) => query,
             _ => return None,
         };
