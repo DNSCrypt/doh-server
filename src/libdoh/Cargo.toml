@@ -15,16 +15,16 @@ default = ["tls"]
 tls = ["tokio-rustls"]
 
 [dependencies]
-anyhow = "1.0.69"
+anyhow = "1.0.70"
 arc-swap = "1.6.0"
 base64 = "0.21.0"
 byteorder = "1.4.3"
 bytes = "1.4.0"
-futures = "0.3.26"
-hyper = { version = "0.14.24", default-features = false, features = ["server", "http1", "http2", "stream"] }
+futures = "0.3.28"
+hyper = { version = "0.14.25", default-features = false, features = ["server", "http1", "http2", "stream"] }
 odoh-rs = "1.0.1"
 rand = "0.8.5"
-tokio = { version = "1.26.0", features = ["net", "rt-multi-thread", "time", "sync"] }
+tokio = { version = "1.27.0", features = ["net", "rt-multi-thread", "time", "sync"] }
 tokio-rustls = { version = "0.23.4", features = ["early-data"], optional = true }
 rustls-pemfile = "1.0.2"
 
