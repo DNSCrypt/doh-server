@@ -21,7 +21,7 @@ base64 = "0.21.0"
 byteorder = "1.4.3"
 bytes = "1.4.0"
 futures = "0.3.28"
-hyper = { version = "0.14.25", default-features = false, features = ["server", "http1", "http2", "stream"] }
+hyper = { version = "0.14.26", default-features = false, features = ["server", "http1", "http2", "stream"] }
 odoh-rs = "1.0.1"
 rand = "0.8.5"
 tokio = { version = "1.27.0", features = ["net", "rt-multi-thread", "time", "sync"] }
