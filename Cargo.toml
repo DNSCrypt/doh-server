@@ -19,7 +19,7 @@ tls = ["libdoh/tls"]
 libdoh = { path = "src/libdoh", version = "0.9.9", default-features = false }
 clap = { version = "4", features = ["std", "cargo", "wrap_help", "string"] }
 dnsstamps = "0.1.9"
-mimalloc = { version = "0.1.39", default-features = false }
+mimalloc = { version = "0.1.41", default-features = false }
 
 [package.metadata.deb]
 extended-description = """\
