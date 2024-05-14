@@ -199,6 +199,8 @@ This [Go code snippet](https://gist.github.com/d6cb41742a1ceb54d48cc286f3d5c5fa)
   * `444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce`
 * Let's Encrypt E1:
   * `cc1060d39c8329b62b6fbc7d0d6df9309869b981e7e6392d5cd8fa408f4d80e6`
+* ZeroSSL:
+  * `9a3a34f727deb9bca51003d9ce9c39f8f27dd9c5242901c2bab1a44e635a0219`
 
 ## Clients
 
