@@ -21,6 +21,12 @@ clap = { version = "4", features = ["std", "cargo", "wrap_help", "string"] }
 dnsstamps = "0.1.9"
 mimalloc = { version = "0.1.41", default-features = false }
 
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/doh-proxy", dest = "/usr/bin/doh-proxy", mode = "755" },
+  { source = "README.md", dest = "/usr/share/doc/doh-proxy/README.md", mode = "644", doc = true },
+]
+
 [package.metadata.deb]
 extended-description = """\
 A fast and secure DoH (DNS-over-HTTPS) and ODoH server written in Rust."""
