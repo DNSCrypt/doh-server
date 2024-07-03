@@ -33,6 +33,9 @@ jobs:
       - name: Install cargo-deb
         run: cargo install cargo-deb
 
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm
+
       - name: Install cargo-zigbuild
         run: cargo install cargo-zigbuild
 
@@ -73,6 +76,16 @@ jobs:
           rustup target add aarch64-unknown-linux-musl
           env RUSTFLAGS="-C strip=symbols" cargo deb --no-strip --cargo-build=zigbuild --target=aarch64-unknown-linux-musl
 
+      - name: RPM packages
+        run: |
+          rustup target add x86_64-unknown-linux-gnu
+          env RUSTFLAGS="-C strip=symbols" cargo-zigbuild build --target=x86_64-unknown-linux-gnu.2.17 --release
+          mv target/x86_64-unknown-linux-musl/release/doh-proxy target/release/
+          cargo generate-rpm --target x86_64-unknown-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+          env RUSTFLAGS="-C strip=symbols" cargo-zigbuild build --target=aarch64-unknown-linux-gnu.2.17 --release
+          cargo generate-rpm --target aarch64-unknown-linux-gnu
+
       - name: Create release
         id: create_release
         uses: actions/create-release@v1
@@ -94,6 +107,28 @@ jobs:
           asset_name: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_amd64.deb"
           asset_path: "target/x86_64-unknown-linux-musl/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}_amd64.deb"
           asset_content_type: application/x-debian-package
+
+      - name: Upload RPM package for x86_64
+        id: upload-release-asset-rpm-x86_64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_name: "doh-proxy-${{ steps.get_version.outputs.VERSION }}-1.x86_64.rpm"
+          asset_path: "target/x86_64-unknown-linux-gnu/generate-rpm/doh-proxy-${{ steps.get_version.outputs.VERSION }}-1.x86_64.rpm"
+          asset_content_type: application/x-redhat-package-manager
+
+      - name: Upload RPM package for aarch64
+        id: upload-release-asset-rpm-aarch64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_name: "doh-proxy-${{ steps.get_version.outputs.VERSION }}-1.aarch64.rpm"
+          asset_path: "target/aarch64-unknown-linux-gnu/generate-rpm/doh-proxy-${{ steps.get_version.outputs.VERSION }}-1.aarch64.rpm"
+          asset_content_type: application/x-redhat-package-manager
 
       - name: Upload tarball for linux-x86_64
         id: upload-release-asset-tarball-linux-x86_64
