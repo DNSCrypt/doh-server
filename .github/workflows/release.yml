@@ -104,8 +104,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_name: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_amd64.deb"
-          asset_path: "target/x86_64-unknown-linux-musl/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}_amd64.deb"
+          asset_name: "doh-proxy_${{ steps.get_version.outputs.VERSION }}-1_amd64.deb"
+          asset_path: "target/x86_64-unknown-linux-musl/debian/doh-proxy_${{ steps.get_version.outputs.VERSION }}-1_amd64.deb"
           asset_content_type: application/x-debian-package
 
       - name: Upload RPM package for x86_64
