@@ -77,7 +77,7 @@ impl ODoHPublicKey {
 
 impl ODoHQueryContext {
     pub fn encrypt_response(self, response_body: Vec<u8>) -> Result<Vec<u8>, DoHError> {
-        let response_nonce = rand::thread_rng().gen::<ResponseNonce>();
+        let response_nonce = rand::thread_rng().r#gen::<ResponseNonce>();
         let response_body_ = ObliviousDoHMessagePlaintext::new(response_body, 0);
         let encrypted_response = odoh_rs::encrypt_response(
             &self.query,

@@ -87,12 +87,9 @@ where
             let server_config_builder = ServerConfig::builder()
                 .with_safe_defaults()
                 .with_no_client_auth();
-            if let Ok(found_config) =
-                server_config_builder.with_single_cert(certs.clone(), certs_key)
-            {
-                Some(found_config)
-            } else {
-                None
+            match server_config_builder.with_single_cert(certs.clone(), certs_key) {
+                Ok(found_config) => Some(found_config),
+                _ => None,
             }
         })
         .ok_or_else(|| {

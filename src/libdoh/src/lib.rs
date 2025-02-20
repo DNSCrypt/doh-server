@@ -257,10 +257,7 @@ impl DoH {
         content_types: &[&'static str],
     ) -> Option<&'static str> {
         let accept = headers.get(hyper::header::ACCEPT);
-        let accept = match accept {
-            None => return None,
-            Some(accept) => accept,
-        };
+        let accept = accept?;
         for part in accept.to_str().unwrap_or("").split(',').map(|s| s.trim()) {
             if let Some(found) = part
                 .split(';')
