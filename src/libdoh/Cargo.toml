@@ -15,12 +15,12 @@ default = ["tls"]
 tls = ["tokio-rustls"]
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.96"
 arc-swap = "1.7.1"
 base64 = "0.22.1"
 byteorder = "1.5.0"
-bytes = "1.6.0"
-futures = "0.3.30"
+bytes = "1.10.0"
+futures = "0.3.31"
 hyper = { version = "^0.14.29", default-features = false, features = [
     "server",
     "http1",
@@ -29,8 +29,8 @@ hyper = { version = "^0.14.29", default-features = false, features = [
     "runtime",
 ] }
 odoh-rs = "1.0.3"
-rand = "0.8.5"
-tokio = { version = "1.38.0", features = [
+rand = "^0.8.5"
+tokio = { version = "1.43.0", features = [
     "net",
     "rt-multi-thread",
     "time",
