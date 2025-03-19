@@ -19,7 +19,7 @@ tls = ["libdoh/tls"]
 libdoh = { path = "src/libdoh", version = "0.9.9", default-features = false }
 clap = { version = "4", features = ["std", "cargo", "wrap_help", "string"] }
 dnsstamps = "0.1.10"
-mimalloc = { version = "0.1.43", default-features = false }
+mimalloc = { version = "0.1.44", default-features = false }
 
 [package.metadata.generate-rpm]
 assets = [
