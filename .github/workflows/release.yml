@@ -46,7 +46,7 @@ jobs:
           mkdir doh-proxy
           mv target/x86_64-unknown-linux-musl/release/doh-proxy doh-proxy/
           cp README.md localhost.pem doh-proxy/
-          tar cJpf doh-proxy_${{ steps.get_version.outputs.VERSION }}_linux-x86_64.tar.bz2 doh-proxy
+          tar cjpf doh-proxy_${{ steps.get_version.outputs.VERSION }}_linux-x86_64.tar.bz2 doh-proxy
           rm -fr doh-proxy
 
       - name: Release build Linux-aarch64
@@ -56,7 +56,7 @@ jobs:
           mkdir doh-proxy
           mv target/aarch64-unknown-linux-musl/release/doh-proxy doh-proxy/
           cp README.md localhost.pem doh-proxy/
-          tar cJpf doh-proxy_${{ steps.get_version.outputs.VERSION }}_linux-aarch64.tar.bz2 doh-proxy
+          tar cjpf doh-proxy_${{ steps.get_version.outputs.VERSION }}_linux-aarch64.tar.bz2 doh-proxy
           rm -fr doh-proxy
 
       - name: Release build Windows-x86_64
