@@ -42,7 +42,7 @@ jobs:
       - name: Release build Linux-x86-64
         run: |
           rustup target add x86_64-unknown-linux-musl
-          env RUSTFLAGS="-C strip=symbols" cargo zigbuild --release --target x86_64-unknown-linux-musl
+          env RUSTFLAGS="-C strip=symbols" CFLAGS="-Wno-date-time" cargo zigbuild --release --target x86_64-unknown-linux-musl
           mkdir doh-proxy
           mv target/x86_64-unknown-linux-musl/release/doh-proxy doh-proxy/
           cp README.md localhost.pem doh-proxy/
@@ -52,7 +52,7 @@ jobs:
       - name: Release build Linux-aarch64
         run: |
           rustup target add aarch64-unknown-linux-musl
-          env RUSTFLAGS="-C strip=symbols" cargo zigbuild --release --target aarch64-unknown-linux-musl
+          env RUSTFLAGS="-C strip=symbols" CFLAGS="-Wno-date-time" cargo zigbuild --release --target aarch64-unknown-linux-musl
           mkdir doh-proxy
           mv target/aarch64-unknown-linux-musl/release/doh-proxy doh-proxy/
           cp README.md localhost.pem doh-proxy/
@@ -72,9 +72,9 @@ jobs:
       - name: Debian packages
         run: |
           rustup target add x86_64-unknown-linux-musl
-          env RUSTFLAGS="-C strip=symbols" cargo deb --no-strip --cargo-build=zigbuild --target=x86_64-unknown-linux-musl
+          env RUSTFLAGS="-C strip=symbols" CFLAGS="-Wno-date-time" cargo deb --no-strip --cargo-build=zigbuild --target=x86_64-unknown-linux-musl
           rustup target add aarch64-unknown-linux-musl
-          env RUSTFLAGS="-C strip=symbols" cargo deb --no-strip --cargo-build=zigbuild --target=aarch64-unknown-linux-musl
+          env RUSTFLAGS="-C strip=symbols" CFLAGS="-Wno-date-time" cargo deb --no-strip --cargo-build=zigbuild --target=aarch64-unknown-linux-musl
 
       - name: RPM packages
         run: |
