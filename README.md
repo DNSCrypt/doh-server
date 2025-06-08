@@ -1,8 +1,54 @@
 # ![DoH server (and ODoH - Oblivious DoH server)](logo.png)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Crates.io](https://img.shields.io/crates/v/doh-proxy.svg)](https://crates.io/crates/doh-proxy)
+
 A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 
 `doh-proxy` is written in Rust, and has been battle-tested in production since February 2018. It doesn't do DNS resolution on its own, but can sit in front of any DNS resolver in order to augment it with DoH support.
+
+## Table of Contents
+
+- [](#)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Installation](#installation)
+    - [Option 1: precompiled binaries for Linux](#option-1-precompiled-binaries-for-linux)
+    - [Option 2: from source code](#option-2-from-source-code)
+  - [Quick Start](#quick-start)
+    - [Basic Usage](#basic-usage)
+    - [Complete Usage Reference](#complete-usage-reference)
+    - [Example Configurations](#example-configurations)
+  - [Deployment Architectures](#deployment-architectures)
+    - [Behind a Reverse Proxy (Recommended)](#behind-a-reverse-proxy-recommended)
+    - [Standalone with Built-in TLS](#standalone-with-built-in-tls)
+  - [Integration Examples](#integration-examples)
+    - [With Encrypted DNS Server](#with-encrypted-dns-server)
+    - [With nginx](#with-nginx)
+    - [With HAProxy](#with-haproxy)
+  - [Oblivious DoH (ODoH)](#oblivious-doh-odoh)
+  - [Operational recommendations](#operational-recommendations)
+  - [DNS Stamps and Certificate Hashes](#dns-stamps-and-certificate-hashes)
+    - [Common certificate hashes](#common-certificate-hashes)
+  - [Troubleshooting](#troubleshooting)
+    - [Common Issues](#common-issues)
+    - [Performance Tuning](#performance-tuning)
+  - [Clients](#clients)
+  - [Public Deployments](#public-deployments)
+  - [Contributing](#contributing)
+  - [License](#license)
+
+## Features
+
+- **DNS-over-HTTPS (DoH)** - Encrypts DNS queries using HTTPS
+- **Oblivious DoH (ODoH)** - Provides additional privacy by hiding client IP addresses
+- **High Performance** - Built with Rust and Tokio for excellent performance
+- **Flexible Deployment** - Can run standalone with built-in TLS or behind a reverse proxy
+- **Production Ready** - Battle-tested in production environments since 2018
+- **Multiple IP Support** - Supports multiple external IP addresses for load balancing
+- **Automatic Certificate Reloading** - No downtime when updating TLS certificates
+- **Configurable Caching** - TTL management with configurable min/max values
 
 ## Installation
 
@@ -26,7 +72,22 @@ cargo install doh-proxy
 cargo install doh-proxy --no-default-features
 ```
 
-## Usage
+## Quick Start
+
+### Basic Usage
+
+```sh
+# Simple setup with a local DNS resolver
+doh-proxy -H 'doh.example.com' -u 127.0.0.1:53
+
+# With a specific public IP address
+doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -g 203.0.113.1
+
+# With built-in TLS support
+doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -i /path/to/cert.pem -I /path/to/key.pem
+```
+
+### Complete Usage Reference
 
 ```text
 USAGE:
@@ -60,70 +121,146 @@ OPTIONS:
             Path to the PEM/PKCS#8-encoded certificates (only required for built-in TLS)
 ```
 
-Example command-line:
+### Example Configurations
 
+**Basic setup with custom DNS resolver:**
 ```sh
-doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -g 233.252.0.5
+doh-proxy -H 'doh.example.com' -u 8.8.8.8:53 -g 203.0.113.1
 ```
 
-Here, `doh.example.com` is the host name (which should match a name included in the TLS certificate), `127.0.0.1:53` is the address of the DNS resolver, and `233.252.0.5` is the public IP address of the DoH server.
-
-For servers with multiple IP addresses, you can specify multiple `-g` options:
-
+**Multiple IP addresses for load balancing:**
 ```sh
-doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -g 233.252.0.5 -g 233.252.0.6 -g 2001:db8::1
+doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -g 203.0.113.1 -g 203.0.113.2 -g 2001:db8::1
+```
+This generates separate DNS stamps for each IP address, allowing clients to connect via any of them.
+
+**Production setup with TLS and custom limits:**
+```sh
+doh-proxy -H 'doh.example.com' \
+          -u 127.0.0.1:53 \
+          -l 0.0.0.0:443 \
+          -i /etc/letsencrypt/live/doh.example.com/fullchain.pem \
+          -I /etc/letsencrypt/live/doh.example.com/privkey.pem \
+          -c 1000 \
+          -C 32
 ```
 
-This will generate separate DNS stamps for each IP address, allowing clients to use any of the specified addresses to connect to the DoH server.
+**Behind a reverse proxy (nginx/Caddy):**
+```sh
+doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -l 127.0.0.1:3000
+```
 
-## HTTP/2 and HTTP/3 termination
+## Deployment Architectures
 
-The recommended way to use `doh-proxy` is to use a TLS termination proxy (such as [hitch](https://github.com/varnish/hitch) or [relayd](https://man.openbsd.org/relayd.8)), a CDN or a web server with proxying abilities as a front-end.
+### Behind a Reverse Proxy (Recommended)
 
-That way, the DoH service can be exposed as a virtual host, sharing the same IP addresses as existing websites.
+The recommended deployment is behind a TLS termination proxy such as nginx, Caddy, HAProxy, or a CDN. This allows:
+- Sharing port 443 with existing web services
+- Leveraging existing TLS certificate management
+- Using HTTP/2 and HTTP/3 features from the proxy
+- Better DDoS protection and rate limiting
 
-If `doh-proxy` and the HTTP/2 (/ HTTP/3) front-end run on the same host, using the HTTP protocol to communicate between both is fine.
+**Example with nginx:**
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name doh.example.com;
+    
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+    
+    location /dns-query {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
 
-If both are on distinct networks, such as when using a CDN, `doh-proxy` can handle HTTPS requests, provided that it was compiled with the `tls` feature.
+**Example with Caddy:**
+```caddyfile
+doh.example.com {
+    reverse_proxy /dns-query localhost:3000
+}
+```
 
-The certificates and private keys must be encoded in PEM/PKCS#8 format. They can be stored in the same file.
+### Standalone with Built-in TLS
 
-If you are using ECDSA certificates and ECDSA private keys start with `-----BEGIN EC PRIVATE KEY-----` and not `-----BEGIN PRIVATE KEY-----`, convert them to PKCS#8 with (in this example, `example.key` is the original file):
+For simpler deployments or when running on separate infrastructure:
+
+```sh
+doh-proxy -H 'doh.example.com' \
+          -u 127.0.0.1:53 \
+          -l 0.0.0.0:443 \
+          -i /path/to/fullchain.pem \
+          -I /path/to/privkey.pem
+```
+
+**Certificate Requirements:**
+- Certificates and keys must be in PEM/PKCS#8 format
+- Can be stored in the same file or separately
+- Automatically reloaded when changed (no restart needed)
+
+If using ECDSA certificates that start with `-----BEGIN EC PRIVATE KEY-----`, convert to PKCS#8:
 
 ```sh
 openssl pkcs8 -topk8 -nocrypt -in example.key -out example.pkcs8.pem
 ```
 
-In order to enable built-in HTTPS support, add the `--tls-cert-path` option to specify the location of the certificates file, as well as the private keys file using `--tls-cert-key-path`.
-
-Once HTTPS is enabled, HTTP connections will not be accepted.
-
-A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/doh-server/raw/master/localhost.pem) can be used for testing.
-The file also includes the private key.
-
-[`acme.sh`](https://github.com/acmesh-official/acme.sh) can be used to create and update TLS certificates using Let's Encrypt and other ACME-compliant providers. If you are using it to create ECDSA keys, see above for converting the secret key into PKCS#8.
-
-The certificates path must be set to the full certificates chain (`fullchain.cer`) and the key path to the secret keys (the `.key` file):
-
+**Using Let's Encrypt with acme.sh:**
 ```sh
-doh-proxy -i /path/to/fullchain.cer -I /path/to/domain.key ...
+# Install acme.sh
+curl https://get.acme.sh | sh
+
+# Get certificates
+acme.sh --issue -d doh.example.com --webroot /var/www/html
+
+# Run doh-proxy with Let's Encrypt certificates
+doh-proxy -H 'doh.example.com' \
+          -u 127.0.0.1:53 \
+          -i ~/.acme.sh/doh.example.com/fullchain.cer \
+          -I ~/.acme.sh/doh.example.com/doh.example.com.key
 ```
 
-Once started, `doh-proxy` automatically reloads the certificates as they change; there is no need to restart the server.
+> **Note:** Once HTTPS is enabled, HTTP connections will not be accepted. A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/doh-server/raw/master/localhost.pem) is available for testing.
 
-If clients are getting the `x509: certificate signed by unknown authority` error, double check that the certificate file is the full chain, not the other `.cer` file.
+## Integration Examples
 
-## Accepting both DNSCrypt and DoH connections on port 443
+### With Encrypted DNS Server
 
-DNSCrypt is an alternative encrypted DNS protocol that is faster and more lightweight than DoH.
+[Encrypted DNS Server](https://github.com/jedisct1/encrypted-dns-server) can handle both DNSCrypt and DoH on the same port:
 
-Both DNSCrypt and DoH connections can be accepted on the same TCP port using [Encrypted DNS Server](https://github.com/jedisct1/encrypted-dns-server).
+```toml
+# In encrypted-dns-server.toml
+[tls]
+upstream_addr = "127.0.0.1:3000"
+```
 
-Encrypted DNS Server forwards DoH queries to Nginx or `doh-proxy` when a TLS connection is detected, or directly responds to DNSCrypt queries.
+This provides:
+- Support for both DNSCrypt and DoH protocols
+- Built-in DNS caching
+- Server-side filtering
+- Connection reuse and DDoS protection
 
-It also provides DNS caching, server-side filtering, metrics, and TCP connection reuse in order to mitigate exhaustion attacks.
+### With nginx
 
-Unless the front-end is a CDN, an ideal setup is to use `doh-proxy` behind `Encrypted DNS Server`.
+```nginx
+location /dns-query {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+}
+```
+
+### With HAProxy
+
+```haproxy
+backend doh_backend
+    mode http
+    server doh1 127.0.0.1:3000 check
+```
 
 ## Oblivious DoH (ODoH)
 
@@ -147,30 +284,8 @@ This can be achieved with the `--allow-odoh-post` command-line switch.
 * Make sure that the front-end supports at least HTTP/2 and TLS 1.3.
 * Internal DoH servers still require TLS certificates. So, if you are planning to deploy an internal server, you need to set up an internal CA, or add self-signed certificates to every single client.
 
-## Example usage with `encrypted-dns-server`
 
-Add the following section to the configuration file:
-
-```toml
-[tls]
-upstream_addr = "127.0.0.1:3000"
-```
-
-## Example usage with `nginx`
-
-In an existing `server`, a `/dns-query` endpoint can be exposed that way:
-
-```text
-location /dns-query {
-  proxy_pass http://127.0.0.1:3000;
-}
-```
-
-This example assumes that the DoH proxy is listening locally to port `3000`.
-
-HTTP caching can be added (see the `proxy_cache_path` and `proxy_cache` directives in the Nginx documentation), but be aware that a DoH server will quickly create a gigantic amount of files.
-
-## DNS Stamp and certificate hashes
+## DNS Stamps and Certificate Hashes
 
 Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server.
 
@@ -212,10 +327,58 @@ This [Go code snippet](https://gist.github.com/d6cb41742a1ceb54d48cc286f3d5c5fa)
 * ZeroSSL:
   * `9a3a34f727deb9bca51003d9ce9c39f8f27dd9c5242901c2bab1a44e635a0219`
 
+## Troubleshooting
+
+### Common Issues
+
+**Port already in use:**
+```sh
+# Check what's using port 3000
+lsof -i :3000
+# Or use a different port
+doh-proxy -l 127.0.0.1:3001 ...
+```
+
+**Certificate errors:**
+- Ensure certificate file contains the full chain
+- Convert ECDSA keys to PKCS#8 format
+- Check file permissions (readable by the doh-proxy user)
+
+**DNS resolution failures:**
+- Verify the upstream DNS server is reachable
+- Check firewall rules for port 53 (UDP/TCP)
+- Test with: `dig @127.0.0.1 -p 53 example.com`
+
+### Performance Tuning
+
+For high-traffic deployments:
+```sh
+doh-proxy -H 'doh.example.com' \
+          -u 127.0.0.1:53 \
+          -c 10000 \     # Max clients
+          -C 100 \       # Max concurrent streams per client
+          -t 30          # Timeout in seconds
+```
+
 ## Clients
 
-`doh-proxy` can be used with [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy) as a client.
+Compatible DoH clients include:
+- [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy) - Supports both DNSCrypt and DoH
+- [cloudflared](https://github.com/cloudflare/cloudflared) - Cloudflare's DoH proxy
+- Firefox, Chrome, Edge (native DoH support)
+- [doh-client](https://github.com/LinkTed/doh-client) - Rust DoH client
+- Android 9+ and iOS 14+ (native DoH support)
 
-`doh-proxy` is used in production for the `doh.crypto.sx` public DNS resolver and many others.
+## Public Deployments
 
-An extensive list of public DoH servers can be found here: [public encrypted DNS servers](https://github.com/DNSCrypt/dnscrypt-resolvers/blob/master/v3/public-resolvers.md).
+`doh-proxy` powers several public DNS services including:
+- `doh.crypto.sx` - Public DNS resolver
+- Many other services listed in [public encrypted DNS servers](https://github.com/DNSCrypt/dnscrypt-resolvers/blob/master/v3/public-resolvers.md)
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit pull requests or open issues on [GitHub](https://github.com/jedisct1/doh-server).
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
