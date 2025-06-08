@@ -31,8 +31,9 @@ pub fn parse_opts(globals: &mut Globals) {
             Arg::new("public_address")
                 .short('g')
                 .long("public-address")
-                .num_args(1)
-                .help("External IP address DoH clients will connect to"),
+                .num_args(1..)
+                .action(clap::ArgAction::Append)
+                .help("External IP address(es) DoH clients will connect to (can be specified multiple times)"),
         )
         .arg(
             Arg::new("public_port")
@@ -242,32 +243,72 @@ pub fn parse_opts(globals: &mut Globals) {
 
     match matches.get_one::<String>("hostname") {
         Some(hostname) => {
-            let mut builder =
-                dnsstamps::DoHBuilder::new(hostname.to_string(), globals.path.to_string());
-            if let Some(public_address) = matches.get_one::<String>("public_address") {
-                builder = builder.with_address(public_address.to_string());
-            }
-            if let Some(public_port) = matches.get_one::<String>("public_port") {
-                let public_port = public_port.parse().expect("Invalid public port");
-                builder = builder.with_port(public_port);
-            }
-            println!(
-                "Test DNS stamp to reach [{}] over DoH: [{}]\n",
-                hostname,
-                builder.serialize().unwrap()
-            );
+            let public_addresses: Vec<&String> = matches
+                .get_many::<String>("public_address")
+                .map(|values| values.collect())
+                .unwrap_or_default();
 
-            let mut builder =
-                dnsstamps::ODoHTargetBuilder::new(hostname.to_string(), globals.path.to_string());
-            if let Some(public_port) = matches.get_one::<String>("public_port") {
-                let public_port = public_port.parse().expect("Invalid public port");
-                builder = builder.with_port(public_port);
+            let public_port = matches
+                .get_one::<String>("public_port")
+                .map(|port| port.parse::<u16>().expect("Invalid public port"));
+
+            if public_addresses.is_empty() {
+                // No public addresses specified, generate stamps without IP
+                let mut doh_builder =
+                    dnsstamps::DoHBuilder::new(hostname.to_string(), globals.path.to_string());
+                if let Some(port) = public_port {
+                    doh_builder = doh_builder.with_port(port);
+                }
+                println!(
+                    "Test DNS stamp to reach [{}] over DoH: [{}]\n",
+                    hostname,
+                    doh_builder.serialize().unwrap()
+                );
+
+                let mut odoh_builder = dnsstamps::ODoHTargetBuilder::new(
+                    hostname.to_string(),
+                    globals.path.to_string(),
+                );
+                if let Some(port) = public_port {
+                    odoh_builder = odoh_builder.with_port(port);
+                }
+                println!(
+                    "Test DNS stamp to reach [{}] over Oblivious DoH: [{}]\n",
+                    hostname,
+                    odoh_builder.serialize().unwrap()
+                );
+            } else {
+                // Generate stamps for each public address
+                for public_address in &public_addresses {
+                    let mut doh_builder =
+                        dnsstamps::DoHBuilder::new(hostname.to_string(), globals.path.to_string())
+                            .with_address(public_address.to_string());
+                    if let Some(port) = public_port {
+                        doh_builder = doh_builder.with_port(port);
+                    }
+                    println!(
+                        "Test DNS stamp to reach [{}] via [{}] over DoH: [{}]",
+                        hostname,
+                        public_address,
+                        doh_builder.serialize().unwrap()
+                    );
+                }
+                println!(); // Empty line for readability
+
+                // ODoH stamps don't support IP addresses, so we generate just one
+                let mut odoh_builder = dnsstamps::ODoHTargetBuilder::new(
+                    hostname.to_string(),
+                    globals.path.to_string(),
+                );
+                if let Some(port) = public_port {
+                    odoh_builder = odoh_builder.with_port(port);
+                }
+                println!(
+                    "Test DNS stamp to reach [{}] over Oblivious DoH: [{}]\n",
+                    hostname,
+                    odoh_builder.serialize().unwrap()
+                );
             }
-            println!(
-                "Test DNS stamp to reach [{}] over Oblivious DoH: [{}]\n",
-                hostname,
-                builder.serialize().unwrap()
-            );
 
             println!("Check out https://dnscrypt.info/stamps/ to compute the actual stamps.\n")
         }

@@ -49,7 +49,7 @@ OPTIONS:
     -X, --max-ttl <max_ttl>                          Maximum TTL, in seconds [default: 604800]
     -T, --min-ttl <min_ttl>                          Minimum TTL, in seconds [default: 10]
     -p, --path <path>                                URI path [default: /dns-query]
-    -g, --public-address <public_address>            External IP address DoH clients will connect to
+    -g, --public-address <public_address>            External IP address(es) DoH clients will connect to (can be specified multiple times)
     -j, --public-port <public_port>                  External port DoH clients will connect to, if not 443
     -u, --server-address <server_address>            Address to connect to [default: 9.9.9.9:53]
     -t, --timeout <timeout>                          Timeout, in seconds [default: 10]
@@ -67,6 +67,14 @@ doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -g 233.252.0.5
 ```
 
 Here, `doh.example.com` is the host name (which should match a name included in the TLS certificate), `127.0.0.1:53` is the address of the DNS resolver, and `233.252.0.5` is the public IP address of the DoH server.
+
+For servers with multiple IP addresses, you can specify multiple `-g` options:
+
+```sh
+doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -g 233.252.0.5 -g 233.252.0.6 -g 2001:db8::1
+```
+
+This will generate separate DNS stamps for each IP address, allowing clients to use any of the specified addresses to connect to the DoH server.
 
 ## HTTP/2 and HTTP/3 termination
 
