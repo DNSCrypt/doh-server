@@ -62,7 +62,7 @@ jobs:
       - name: Release build Windows-x86_64
         run: |
           rustup target add x86_64-pc-windows-gnu
-          env RUSTFLAGS="-C strip=symbols" cargo zigbuild --release --target x86_64-pc-windows-gnu
+          env RUSTFLAGS="-C strip=symbols" CFLAGS="-Wno-date-time" cargo zigbuild --release --target x86_64-pc-windows-gnu
           mkdir doh-proxy
           mv target/x86_64-pc-windows-gnu/release/doh-proxy.exe doh-proxy/
           cp README.md localhost.pem doh-proxy/
