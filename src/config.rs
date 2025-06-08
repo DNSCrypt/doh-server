@@ -149,6 +149,26 @@ pub fn parse_opts(globals: &mut Globals) {
                 .action(SetTrue)
                 .long("allow-odoh-post")
                 .help("Allow POST queries over ODoH even if they have been disabed for DoH"),
+        )
+        .arg(
+            Arg::new("enable_ecs")
+                .long("enable-ecs")
+                .action(SetTrue)
+                .help("Enable EDNS Client Subnet (forward client IP to upstream DNS)"),
+        )
+        .arg(
+            Arg::new("ecs_prefix_v4")
+                .long("ecs-prefix-v4")
+                .num_args(1)
+                .default_value("24")
+                .help("EDNS Client Subnet prefix length for IPv4 addresses"),
+        )
+        .arg(
+            Arg::new("ecs_prefix_v6")
+                .long("ecs-prefix-v6")
+                .num_args(1)
+                .default_value("56")
+                .help("EDNS Client Subnet prefix length for IPv6 addresses"),
         );
 
     #[cfg(feature = "tls")]
@@ -278,6 +298,28 @@ pub fn parse_opts(globals: &mut Globals) {
     globals.keepalive = !matches.get_flag("disable_keepalive");
     globals.disable_post = matches.get_flag("disable_post");
     globals.allow_odoh_post = matches.get_flag("allow_odoh_post");
+    globals.enable_ecs = matches.get_flag("enable_ecs");
+
+    // Parse ECS prefix lengths
+    let ecs_prefix_v4_str = matches
+        .get_one::<String>("ecs_prefix_v4")
+        .expect("ecs_prefix_v4 has a default value");
+    globals.ecs_prefix_v4 = ecs_prefix_v4_str.parse().unwrap_or_else(|e| {
+        exit_with_error(&format!(
+            "Invalid ECS IPv4 prefix '{}': {}",
+            ecs_prefix_v4_str, e
+        ))
+    });
+
+    let ecs_prefix_v6_str = matches
+        .get_one::<String>("ecs_prefix_v6")
+        .expect("ecs_prefix_v6 has a default value");
+    globals.ecs_prefix_v6 = ecs_prefix_v6_str.parse().unwrap_or_else(|e| {
+        exit_with_error(&format!(
+            "Invalid ECS IPv6 prefix '{}': {}",
+            ecs_prefix_v6_str, e
+        ))
+    });
 
     #[cfg(feature = "tls")]
     {

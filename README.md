@@ -31,6 +31,12 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
     - [Usage](#usage)
     - [Supported Parameters](#supported-parameters)
     - [Response Format](#response-format)
+  - [EDNS Client Subnet (ECS)](#edns-client-subnet-ecs)
+    - [Overview](#overview)
+    - [Configuration Options](#configuration-options)
+    - [How It Works](#how-it-works)
+    - [Examples](#examples)
+    - [Privacy Considerations](#privacy-considerations)
   - [Oblivious DoH (ODoH)](#oblivious-doh-odoh)
   - [Operational recommendations](#operational-recommendations)
   - [DNS Stamps and Certificate Hashes](#dns-stamps-and-certificate-hashes)
@@ -48,6 +54,7 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 - **DNS-over-HTTPS (DoH)** - Encrypts DNS queries using HTTPS
 - **JSON API Support** - Compatible with Google DNS-over-HTTPS JSON API format
 - **Oblivious DoH (ODoH)** - Provides additional privacy by hiding client IP addresses
+- **EDNS Client Subnet** - Forward client IP information to upstream resolvers for geo-optimized responses
 - **High Performance** - Built with Rust and Tokio for excellent performance
 - **Flexible Deployment** - Can run standalone with built-in TLS or behind a reverse proxy
 - **Production Ready** - Battle-tested in production environments since 2018
@@ -124,6 +131,10 @@ OPTIONS:
 
     -i, --tls-cert-path <tls_cert_path>
             Path to the PEM/PKCS#8-encoded certificates (only required for built-in TLS)
+
+    --enable-ecs                              Enable EDNS Client Subnet
+    --ecs-prefix-v4 <ecs_prefix_v4>         IPv4 prefix length for EDNS Client Subnet [default: 24]
+    --ecs-prefix-v6 <ecs_prefix_v6>         IPv6 prefix length for EDNS Client Subnet [default: 56]
 ```
 
 ### Example Configurations
@@ -170,10 +181,10 @@ The recommended deployment is behind a TLS termination proxy such as nginx, Cadd
 server {
     listen 443 ssl http2;
     server_name doh.example.com;
-    
+
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
-    
+
     location /dns-query {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
@@ -315,6 +326,84 @@ curl -H "Accept: application/dns-json" \
   }]
 }
 ```
+
+## EDNS Client Subnet (ECS)
+
+### Overview
+
+EDNS Client Subnet (ECS) is a DNS extension that allows the DoH proxy to forward client IP information to upstream DNS resolvers. This enables geo-optimized DNS responses by allowing authoritative nameservers to return results based on the client's actual location rather than the proxy's location.
+
+### Configuration Options
+
+Enable ECS support with the following command-line options:
+
+- `--enable-ecs` - Enable EDNS Client Subnet functionality
+- `--ecs-prefix-v4 <length>` - IPv4 prefix length (default: 24)
+- `--ecs-prefix-v6 <length>` - IPv6 prefix length (default: 56)
+
+### How It Works
+
+1. **Client IP Extraction**: The proxy extracts the client's IP address from:
+   - `X-Forwarded-For` header (takes the first IP if multiple are present)
+   - `X-Real-IP` header
+   - Direct connection IP (if no headers are present)
+
+2. **IP Truncation**: For privacy, client IPs are truncated to the configured prefix length:
+   - IPv4: Default /24 (e.g., 192.168.1.100 → 192.168.1.0/24)
+   - IPv6: Default /56 (e.g., 2001:db8::1 → 2001:db8::/56)
+
+3. **DNS Query Enhancement**: The truncated client subnet is added to outgoing DNS queries using the EDNS0 Client Subnet option (RFC 7871).
+
+4. **Geo-Optimized Responses**: Upstream resolvers and authoritative nameservers can use this information to return geographically appropriate results.
+
+### Examples
+
+**Basic ECS setup:**
+```sh
+doh-proxy -H 'doh.example.com' -u 8.8.8.8:53 --enable-ecs
+```
+
+**Custom prefix lengths for more privacy:**
+```sh
+doh-proxy -H 'doh.example.com' -u 8.8.8.8:53 \
+          --enable-ecs \
+          --ecs-prefix-v4 16 \
+          --ecs-prefix-v6 48
+```
+
+**Behind nginx with ECS enabled:**
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name doh.example.com;
+
+    location /dns-query {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+**Testing ECS functionality:**
+```bash
+# With X-Forwarded-For header
+curl -H "X-Forwarded-For: 1.2.3.4" \
+     -H "Accept: application/dns-json" \
+     "https://doh.example.com/dns-query?name=example.com&type=1"
+
+# The DNS query sent to upstream will include ECS: 1.2.0.0/24
+```
+
+### Privacy Considerations
+
+- **IP Truncation**: Client IPs are never sent in full. The default settings provide a good balance between geolocation accuracy and privacy.
+- **Opt-in Only**: ECS is disabled by default and must be explicitly enabled.
+- **Header Trust**: Only trust X-Forwarded-For and X-Real-IP headers from known reverse proxies.
+- **Logging**: The proxy does not log client IPs when ECS is enabled, but upstream resolvers might.
+
+For maximum privacy, avoid enabling ECS or use larger prefix values (smaller subnets) like /8 for IPv4 or /32 for IPv6.
 
 ## Oblivious DoH (ODoH)
 

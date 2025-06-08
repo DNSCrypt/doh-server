@@ -87,7 +87,9 @@ where
             let server_config_builder = ServerConfig::builder()
                 .with_safe_defaults()
                 .with_no_client_auth();
-            server_config_builder.with_single_cert(certs.clone(), certs_key).ok()
+            server_config_builder
+                .with_single_cert(certs.clone(), certs_key)
+                .ok()
         })
         .ok_or_else(|| {
             io::Error::new(

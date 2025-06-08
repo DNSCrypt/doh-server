@@ -31,6 +31,9 @@ pub struct Globals {
     pub keepalive: bool,
     pub disable_post: bool,
     pub allow_odoh_post: bool,
+    pub enable_ecs: bool,
+    pub ecs_prefix_v4: u8,
+    pub ecs_prefix_v6: u8,
     pub odoh_configs_path: String,
     pub odoh_rotator: Arc<ODoHRotator>,
 

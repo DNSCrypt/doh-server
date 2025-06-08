@@ -81,6 +81,9 @@ fn main() {
         keepalive: true,
         disable_post: false,
         allow_odoh_post: false,
+        enable_ecs: false,
+        ecs_prefix_v4: 24,
+        ecs_prefix_v6: 56,
         odoh_configs_path: ODOH_CONFIGS_PATH.to_string(),
         odoh_rotator: Arc::new(rotator),
 

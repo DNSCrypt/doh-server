@@ -1,13 +1,14 @@
 mod constants;
 pub mod dns;
 mod dns_json;
+mod edns_ecs;
 mod errors;
 mod globals;
 pub mod odoh;
 #[cfg(feature = "tls")]
 mod tls;
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -146,8 +147,12 @@ impl DoH {
         }
     }
 
-    async fn serve_doh_query(&self, query: Vec<u8>) -> Result<Response<Body>, http::Error> {
-        let resp = match self.proxy(query).await {
+    async fn serve_doh_query(
+        &self,
+        query: Vec<u8>,
+        client_ip: Option<IpAddr>,
+    ) -> Result<Response<Body>, http::Error> {
+        let resp = match self.proxy(query, client_ip).await {
             Ok(resp) => {
                 self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str(), true)
             }
@@ -185,22 +190,35 @@ impl DoH {
     }
 
     async fn serve_doh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        let client_ip = if self.globals.enable_ecs {
+            edns_ecs::extract_client_ip(req.headers(), None)
+        } else {
+            None
+        };
+
         let query = match self.query_from_query_string(req) {
             Some(query) => query,
             _ => return http_error(StatusCode::BAD_REQUEST),
         };
-        self.serve_doh_query(query).await
+        self.serve_doh_query(query, client_ip).await
     }
 
     async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
         if self.globals.disable_post {
             return http_error(StatusCode::METHOD_NOT_ALLOWED);
         }
+
+        let client_ip = if self.globals.enable_ecs {
+            edns_ecs::extract_client_ip(req.headers(), None)
+        } else {
+            None
+        };
+
         let query = match self.read_body(req.into_body()).await {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
         };
-        self.serve_doh_query(query).await
+        self.serve_doh_query(query, client_ip).await
     }
 
     async fn serve_odoh(&self, encrypted_query: Vec<u8>) -> Result<Response<Body>, http::Error> {
@@ -209,7 +227,7 @@ impl DoH {
             Ok((q, context)) => (q.to_vec(), context),
             Err(e) => return http_error(StatusCode::from(e)),
         };
-        let resp = match self.proxy(query).await {
+        let resp = match self.proxy(query, None).await {
             Ok(resp) => resp,
             Err(e) => return http_error(StatusCode::from(e)),
         };
@@ -318,8 +336,15 @@ impl DoH {
             }
         };
 
+        // Extract client IP if ECS is enabled
+        let client_ip = if self.globals.enable_ecs {
+            edns_ecs::extract_client_ip(req.headers(), None)
+        } else {
+            None
+        };
+
         // Send query and get response
-        let dns_response = match self.proxy(query_packet).await {
+        let dns_response = match self.proxy(query_packet, client_ip).await {
             Ok(resp) => resp,
             Err(e) => return http_error(StatusCode::from(e)),
         };
@@ -444,17 +469,39 @@ impl DoH {
         Ok(query)
     }
 
-    async fn proxy(&self, query: Vec<u8>) -> Result<DnsResponse, DoHError> {
+    async fn proxy(
+        &self,
+        query: Vec<u8>,
+        client_ip: Option<IpAddr>,
+    ) -> Result<DnsResponse, DoHError> {
         let proxy_timeout = self.globals.timeout;
-        let timeout_res = tokio::time::timeout(proxy_timeout, self._proxy(query)).await;
+        let timeout_res = tokio::time::timeout(proxy_timeout, self._proxy(query, client_ip)).await;
         timeout_res.map_err(|_| DoHError::UpstreamTimeout)?
     }
 
-    async fn _proxy(&self, mut query: Vec<u8>) -> Result<DnsResponse, DoHError> {
+    async fn _proxy(
+        &self,
+        mut query: Vec<u8>,
+        client_ip: Option<IpAddr>,
+    ) -> Result<DnsResponse, DoHError> {
         if query.len() < MIN_DNS_PACKET_LEN {
             return Err(DoHError::Incomplete);
         }
         let _ = dns::set_edns_max_payload_size(&mut query, MAX_DNS_RESPONSE_LEN as _);
+
+        // Add EDNS Client Subnet if enabled and we have a client IP
+        if self.globals.enable_ecs {
+            if let Some(client_ip) = client_ip {
+                if let Err(e) = edns_ecs::add_ecs_to_packet(
+                    &mut query,
+                    client_ip,
+                    self.globals.ecs_prefix_v4,
+                    self.globals.ecs_prefix_v6,
+                ) {
+                    eprintln!("Failed to add EDNS Client Subnet: {}", e);
+                }
+            }
+        }
         let globals = &self.globals;
         let mut packet = vec![0; MAX_DNS_RESPONSE_LEN];
         let (min_ttl, max_ttl, err_ttl) = (globals.min_ttl, globals.max_ttl, globals.err_ttl);
