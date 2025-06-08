@@ -87,10 +87,7 @@ where
             let server_config_builder = ServerConfig::builder()
                 .with_safe_defaults()
                 .with_no_client_auth();
-            match server_config_builder.with_single_cert(certs.clone(), certs_key) {
-                Ok(found_config) => Some(found_config),
-                _ => None,
-            }
+            server_config_builder.with_single_cert(certs.clone(), certs_key).ok()
         })
         .ok_or_else(|| {
             io::Error::new(
@@ -142,17 +139,27 @@ impl DoH {
         listener: TcpListener,
         server: Http<LocalExecutor>,
     ) -> Result<(), DoHError> {
-        let certs_path = self.globals.tls_cert_path.as_ref()
-            .ok_or_else(|| DoHError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "TLS certificate path not provided"
-            )))?
+        let certs_path = self
+            .globals
+            .tls_cert_path
+            .as_ref()
+            .ok_or_else(|| {
+                DoHError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "TLS certificate path not provided",
+                ))
+            })?
             .clone();
-        let certs_keys_path = self.globals.tls_cert_key_path.as_ref()
-            .ok_or_else(|| DoHError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "TLS certificate key path not provided"
-            )))?
+        let certs_keys_path = self
+            .globals
+            .tls_cert_key_path
+            .as_ref()
+            .ok_or_else(|| {
+                DoHError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "TLS certificate key path not provided",
+                ))
+            })?
             .clone();
         let (tls_acceptor_sender, tls_acceptor_receiver) = mpsc::channel(1);
         let https_service = self.start_https_service(tls_acceptor_receiver, listener, server);

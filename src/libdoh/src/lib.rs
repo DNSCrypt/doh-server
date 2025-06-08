@@ -1,5 +1,6 @@
 mod constants;
 pub mod dns;
+mod dns_json;
 mod errors;
 mod globals;
 pub mod odoh;
@@ -48,6 +49,7 @@ struct DnsResponse {
 enum DoHType {
     Standard,
     Oblivious,
+    Json,
 }
 
 impl DoHType {
@@ -55,6 +57,7 @@ impl DoHType {
         match self {
             DoHType::Standard => String::from("application/dns-message"),
             DoHType::Oblivious => String::from("application/oblivious-dns-message"),
+            DoHType::Json => String::from("application/dns-json"),
         }
     }
 }
@@ -129,6 +132,7 @@ impl DoH {
         match Self::parse_content_type(&req) {
             Ok(DoHType::Standard) => self.serve_doh_get(req).await,
             Ok(DoHType::Oblivious) => self.serve_odoh_get(req).await,
+            Ok(DoHType::Json) => self.serve_json_get(req).await,
             Err(response) => Ok(response),
         }
     }
@@ -137,6 +141,7 @@ impl DoH {
         match Self::parse_content_type(&req) {
             Ok(DoHType::Standard) => self.serve_doh_post(req).await,
             Ok(DoHType::Oblivious) => self.serve_odoh_post(req).await,
+            Ok(DoHType::Json) => http_error(StatusCode::METHOD_NOT_ALLOWED),
             Err(response) => Ok(response),
         }
     }
@@ -252,6 +257,109 @@ impl DoH {
         }
     }
 
+    async fn serve_json_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        use serde_json::json;
+
+        // Parse query parameters
+        let query_params = req.uri().query().unwrap_or("");
+        let mut json_query = dns_json::DnsJsonQuery {
+            name: String::new(),
+            qtype: None,
+            cd: None,
+            ct: None,
+            do_: None,
+            edns_client_subnet: None,
+        };
+
+        // Parse query string
+        for parts in query_params.split('&') {
+            let mut kv = parts.split('=');
+            if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
+                match k {
+                    "name" => {
+                        json_query.name = urlencoding::decode(v).unwrap_or_default().into_owned()
+                    }
+                    "type" => json_query.qtype = v.parse().ok(),
+                    "cd" => json_query.cd = Some(v == "1" || v == "true"),
+                    "ct" => json_query.ct = Some(v.to_string()),
+                    "do" => json_query.do_ = Some(v == "1" || v == "true"),
+                    "edns_client_subnet" => json_query.edns_client_subnet = Some(v.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        // Validate query
+        if json_query.name.is_empty() {
+            let error_response = json!({
+                "Status": 400,
+                "Comment": "Missing 'name' parameter"
+            });
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header(hyper::header::CONTENT_TYPE, "application/dns-json")
+                .body(Body::from(error_response.to_string()))
+                .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR));
+        }
+
+        // Build DNS query packet
+        let query_packet = match dns_json::build_dns_query(&json_query) {
+            Ok(packet) => packet,
+            Err(e) => {
+                let error_response = json!({
+                    "Status": 400,
+                    "Comment": format!("Invalid query: {}", e)
+                });
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .header(hyper::header::CONTENT_TYPE, "application/dns-json")
+                    .body(Body::from(error_response.to_string()))
+                    .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR));
+            }
+        };
+
+        // Send query and get response
+        let dns_response = match self.proxy(query_packet).await {
+            Ok(resp) => resp,
+            Err(e) => return http_error(StatusCode::from(e)),
+        };
+
+        // Parse DNS response to JSON
+        match dns_json::parse_dns_to_json(&dns_response.packet) {
+            Ok(json_response) => {
+                let json_string = match serde_json::to_string(&json_response) {
+                    Ok(s) => s,
+                    Err(_) => return http_error(StatusCode::INTERNAL_SERVER_ERROR),
+                };
+
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header(hyper::header::CONTENT_TYPE, "application/dns-json")
+                    .header(
+                        hyper::header::CACHE_CONTROL,
+                        format!(
+                            "max-age={}, stale-if-error={}, stale-while-revalidate={}",
+                            dns_response.ttl, STALE_IF_ERROR_SECS, STALE_WHILE_REVALIDATE_SECS
+                        ),
+                    )
+                    .header(hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .body(Body::from(json_string))
+                    .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR))
+            }
+            Err(e) => {
+                let error_response = json!({
+                    "Status": 500,
+                    "Comment": format!("Failed to parse DNS response: {}", e)
+                });
+                Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .header(hyper::header::CONTENT_TYPE, "application/dns-json")
+                    .body(Body::from(error_response.to_string()))
+                    .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR))
+            }
+        }
+    }
+
     fn acceptable_content_type(
         headers: &HeaderMap,
         content_types: &[&'static str],
@@ -278,12 +386,13 @@ impl DoH {
     fn parse_content_type(req: &Request<Body>) -> Result<DoHType, Response<Body>> {
         const CT_DOH: &str = "application/dns-message";
         const CT_ODOH: &str = "application/oblivious-dns-message";
+        const CT_JSON: &str = "application/dns-json";
 
         let headers = req.headers();
         let content_type = match headers.get(hyper::header::CONTENT_TYPE) {
             None => {
                 let acceptable_content_type =
-                    Self::acceptable_content_type(headers, &[CT_DOH, CT_ODOH]);
+                    Self::acceptable_content_type(headers, &[CT_DOH, CT_ODOH, CT_JSON]);
                 match acceptable_content_type {
                     None => {
                         let response = Response::builder()
@@ -310,6 +419,7 @@ impl DoH {
         match content_type.to_ascii_lowercase().as_str() {
             CT_DOH => Ok(DoHType::Standard),
             CT_ODOH => Ok(DoHType::Oblivious),
+            CT_JSON => Ok(DoHType::Json),
             _ => {
                 let response = Response::builder()
                     .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)

@@ -27,6 +27,10 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
     - [With Encrypted DNS Server](#with-encrypted-dns-server)
     - [With nginx](#with-nginx)
     - [With HAProxy](#with-haproxy)
+  - [JSON API](#json-api)
+    - [Usage](#usage)
+    - [Supported Parameters](#supported-parameters)
+    - [Response Format](#response-format)
   - [Oblivious DoH (ODoH)](#oblivious-doh-odoh)
   - [Operational recommendations](#operational-recommendations)
   - [DNS Stamps and Certificate Hashes](#dns-stamps-and-certificate-hashes)
@@ -42,6 +46,7 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 ## Features
 
 - **DNS-over-HTTPS (DoH)** - Encrypts DNS queries using HTTPS
+- **JSON API Support** - Compatible with Google DNS-over-HTTPS JSON API format
 - **Oblivious DoH (ODoH)** - Provides additional privacy by hiding client IP addresses
 - **High Performance** - Built with Rust and Tokio for excellent performance
 - **Flexible Deployment** - Can run standalone with built-in TLS or behind a reverse proxy
@@ -260,6 +265,55 @@ location /dns-query {
 backend doh_backend
     mode http
     server doh1 127.0.0.1:3000 check
+```
+
+## JSON API
+
+The server supports Google's DNS-over-HTTPS JSON API format, making it compatible with applications that use this format.
+
+### Usage
+
+Send GET requests to `/dns-query` with `Accept: application/dns-json` header:
+
+```bash
+# Query A records
+curl -H "Accept: application/dns-json" \
+  "http://localhost:3000/dns-query?name=example.com&type=1"
+
+# Query with multiple parameters
+curl -H "Accept: application/dns-json" \
+  "http://localhost:3000/dns-query?name=example.com&type=28&cd=1&do=1"
+```
+
+### Supported Parameters
+
+- `name` - Domain name to query (required)
+- `type` - DNS record type (default: 1 for A records)
+- `cd` - Disable DNSSEC validation (0 or 1)
+- `do` - Request DNSSEC data (0 or 1)
+- `edns_client_subnet` - Client subnet for EDNS
+
+### Response Format
+
+```json
+{
+  "Status": 0,
+  "TC": false,
+  "RD": true,
+  "RA": true,
+  "AD": false,
+  "CD": false,
+  "Question": [{
+    "name": "example.com",
+    "type": 1
+  }],
+  "Answer": [{
+    "name": "example.com",
+    "type": 1,
+    "TTL": 300,
+    "data": "93.184.216.34"
+  }]
+}
 ```
 
 ## Oblivious DoH (ODoH)

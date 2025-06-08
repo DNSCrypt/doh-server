@@ -9,7 +9,7 @@ const DNS_OFFSET_QUESTION: usize = DNS_HEADER_SIZE;
 
 const DNS_FLAGS_TC: u16 = 1u16 << 9;
 
-const DNS_TYPE_OPT: u16 = 41;
+pub const DNS_TYPE_OPT: u16 = 41;
 
 const DNS_PTYPE_PADDING: u16 = 12;
 
