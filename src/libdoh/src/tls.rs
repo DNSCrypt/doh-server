@@ -142,8 +142,18 @@ impl DoH {
         listener: TcpListener,
         server: Http<LocalExecutor>,
     ) -> Result<(), DoHError> {
-        let certs_path = self.globals.tls_cert_path.as_ref().unwrap().clone();
-        let certs_keys_path = self.globals.tls_cert_key_path.as_ref().unwrap().clone();
+        let certs_path = self.globals.tls_cert_path.as_ref()
+            .ok_or_else(|| DoHError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "TLS certificate path not provided"
+            )))?
+            .clone();
+        let certs_keys_path = self.globals.tls_cert_key_path.as_ref()
+            .ok_or_else(|| DoHError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "TLS certificate key path not provided"
+            )))?
+            .clone();
         let (tls_acceptor_sender, tls_acceptor_receiver) = mpsc::channel(1);
         let https_service = self.start_https_service(tls_acceptor_receiver, listener, server);
         let cert_service = async {
