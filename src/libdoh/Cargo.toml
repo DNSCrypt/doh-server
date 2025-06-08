@@ -15,7 +15,7 @@ default = ["tls"]
 tls = ["tokio-rustls"]
 
 [dependencies]
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 arc-swap = "1.7.1"
 base64 = "0.22.1"
 byteorder = "1.5.0"
@@ -32,7 +32,7 @@ odoh-rs = "1.0.3"
 rand = "^0.8.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1.44.1", features = [
+tokio = { version = "1.45.1", features = [
     "net",
     "rt-multi-thread",
     "time",
