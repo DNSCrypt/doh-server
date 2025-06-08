@@ -79,12 +79,12 @@ jobs:
       - name: RPM packages
         run: |
           rustup target add x86_64-unknown-linux-gnu
-          env RUSTFLAGS="-C strip=symbols" cargo-zigbuild build --target=x86_64-unknown-linux-gnu.2.17 --release
+          env RUSTFLAGS="-C strip=symbols" CFLAGS="-Wno-date-time" cargo-zigbuild build --target=x86_64-unknown-linux-gnu --release
           mv target/x86_64-unknown-linux-musl/release/doh-proxy target/release/
-          cargo generate-rpm --target x86_64-unknown-linux-gnu
+          cargo generate-rpm --target x86_64-unknown-linux-gnu.2.19
           rustup target add aarch64-unknown-linux-gnu
-          env RUSTFLAGS="-C strip=symbols" cargo-zigbuild build --target=aarch64-unknown-linux-gnu.2.17 --release
-          cargo generate-rpm --target aarch64-unknown-linux-gnu
+          env RUSTFLAGS="-C strip=symbols" CFLAGS="-Wno-date-time" cargo-zigbuild build --target=aarch64-unknown-linux-gnu --release
+          cargo generate-rpm --target aarch64-unknown-linux-gnu.2.19
 
       - name: Create release
         id: create_release
