@@ -5,3 +5,4 @@ Cargo.lock
 /target/
 /src/libdoh/target/
 
+test.sh
