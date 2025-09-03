@@ -31,12 +31,18 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
     - [Usage](#usage)
     - [Supported Parameters](#supported-parameters)
     - [Response Format](#response-format)
+  - [Request Logging](#request-logging)
+    - [Overview](#overview-1)
+    - [Configuration](#configuration)
+    - [Log Format](#log-format)
+    - [Log Rotation](#log-rotation)
+    - [Privacy Considerations](#privacy-considerations)
   - [EDNS Client Subnet (ECS)](#edns-client-subnet-ecs)
-    - [Overview](#overview)
+    - [Overview](#overview-2)
     - [Configuration Options](#configuration-options)
     - [How It Works](#how-it-works)
     - [Examples](#examples)
-    - [Privacy Considerations](#privacy-considerations)
+    - [Privacy Considerations](#privacy-considerations-1)
   - [Oblivious DoH (ODoH)](#oblivious-doh-odoh)
   - [Operational recommendations](#operational-recommendations)
   - [DNS Stamps and Certificate Hashes](#dns-stamps-and-certificate-hashes)
@@ -61,6 +67,7 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 - **Multiple IP Support** - Supports multiple external IP addresses for load balancing
 - **Automatic Certificate Reloading** - No downtime when updating TLS certificates
 - **Configurable Caching** - TTL management with configurable min/max values
+- **Request Logging** - Optional request logging with automatic rotation
 
 ## Installation
 
@@ -135,6 +142,10 @@ OPTIONS:
     --enable-ecs                              Enable EDNS Client Subnet
     --ecs-prefix-v4 <ecs_prefix_v4>         IPv4 prefix length for EDNS Client Subnet [default: 24]
     --ecs-prefix-v6 <ecs_prefix_v6>         IPv6 prefix length for EDNS Client Subnet [default: 56]
+    
+    --log-file <log_file>                    Path to the request log file (disabled if not specified)
+    --log-max-size <log_max_size>           Maximum log file size in MB before rotation [default: 100]
+    --log-max-files <log_max_files>         Maximum number of rotated log files to keep [default: 5]
 ```
 
 ### Example Configurations
@@ -159,6 +170,15 @@ doh-proxy -H 'doh.example.com' \
           -I /etc/letsencrypt/live/doh.example.com/privkey.pem \
           -c 1000 \
           -C 32
+```
+
+**With request logging:**
+```sh
+doh-proxy -H 'doh.example.com' \
+          -u 127.0.0.1:53 \
+          --log-file /var/log/doh-requests.log \
+          --log-max-size 50 \
+          --log-max-files 10
 ```
 
 **Behind a reverse proxy (nginx/Caddy):**
@@ -326,6 +346,67 @@ curl -H "Accept: application/dns-json" \
   }]
 }
 ```
+
+## Request Logging
+
+### Overview
+
+The DoH proxy supports optional request logging to track DNS queries for monitoring, debugging, and analytics purposes. When enabled, the proxy logs each request with timestamp, client IP, query name, query type, and User-Agent.
+
+### Configuration
+
+Enable request logging with the following command-line options:
+
+- `--log-file <path>` - Path to the log file (logging is disabled if not specified)
+- `--log-max-size <MB>` - Maximum log file size in MB before rotation (default: 100)
+- `--log-max-files <count>` - Maximum number of rotated log files to keep (default: 5)
+
+Example:
+```sh
+doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 \
+          --log-file /var/log/doh-requests.log \
+          --log-max-size 50 \
+          --log-max-files 10
+```
+
+### Log Format
+
+Each log entry contains the following fields (space-separated):
+```
+<timestamp> <client_ip> <query_name> <query_type> <user_agent>
+```
+
+Example log entries:
+```
+2025-09-03 20:21:55 UTC 192.168.1.100 www.example.com A Mozilla/5.0
+2025-09-03 20:21:56 UTC 10.0.0.50 mail.google.com MX CurlTest/1.0
+2025-09-03 20:21:57 UTC - cloudflare.com AAAA -
+```
+
+Fields:
+- **timestamp**: UTC timestamp in YYYY-MM-DD HH:MM:SS format
+- **client_ip**: Client IP address (or "-" if not available)
+- **query_name**: Fully qualified domain name being queried
+- **query_type**: DNS record type (A, AAAA, MX, TXT, etc.)
+- **user_agent**: HTTP User-Agent header (or "-" if not provided)
+
+### Log Rotation
+
+The proxy automatically rotates log files when they reach the configured size limit:
+
+1. When the current log file reaches `--log-max-size` MB, it's renamed to `<log_file>.1`
+2. Existing rotated files are renamed: `.1` → `.2`, `.2` → `.3`, etc.
+3. Files beyond `--log-max-files` are deleted
+4. A new log file is created at the original path
+
+### Privacy Considerations
+
+- **Logging is disabled by default** to protect user privacy
+- When enabled, logs contain client IP addresses and queried domains
+- Consider your local privacy regulations before enabling logging
+- Use appropriate file permissions to restrict log access
+- Implement log retention policies aligned with your privacy requirements
+- Note: The proxy does not log client IPs when ECS is enabled to avoid duplication, but upstream resolvers might still log them
 
 ## EDNS Client Subnet (ECS)
 

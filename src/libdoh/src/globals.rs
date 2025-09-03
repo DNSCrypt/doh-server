@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-#[cfg(feature = "tls")]
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -7,6 +6,7 @@ use std::time::Duration;
 
 use tokio::runtime;
 
+use crate::logging::RequestLogger;
 use crate::odoh::ODoHRotator;
 
 #[derive(Debug)]
@@ -36,6 +36,11 @@ pub struct Globals {
     pub ecs_prefix_v6: u8,
     pub odoh_configs_path: String,
     pub odoh_rotator: Arc<ODoHRotator>,
+
+    pub log_file: Option<PathBuf>,
+    pub log_max_size: u64,
+    pub log_max_files: u32,
+    pub logger: Option<Arc<RequestLogger>>,
 
     pub runtime_handle: runtime::Handle,
 }

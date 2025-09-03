@@ -1,5 +1,4 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
-#[cfg(feature = "tls")]
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -169,6 +168,26 @@ pub fn parse_opts(globals: &mut Globals) {
                 .num_args(1)
                 .default_value("56")
                 .help("EDNS Client Subnet prefix length for IPv6 addresses"),
+        )
+        .arg(
+            Arg::new("log_file")
+                .long("log-file")
+                .num_args(1)
+                .help("Path to the request log file (disabled if not specified)"),
+        )
+        .arg(
+            Arg::new("log_max_size")
+                .long("log-max-size")
+                .num_args(1)
+                .default_value("100")
+                .help("Maximum log file size in MB before rotation (default: 100)"),
+        )
+        .arg(
+            Arg::new("log_max_files")
+                .long("log-max-files")
+                .num_args(1)
+                .default_value("5")
+                .help("Maximum number of rotated log files to keep (default: 5)"),
         );
 
     #[cfg(feature = "tls")]
@@ -320,6 +339,34 @@ pub fn parse_opts(globals: &mut Globals) {
             ecs_prefix_v6_str, e
         ))
     });
+
+    // Parse logging configuration
+    globals.log_file = matches.get_one::<String>("log_file").map(PathBuf::from);
+
+    if globals.log_file.is_some() {
+        let log_max_size_str = matches
+            .get_one::<String>("log_max_size")
+            .expect("log_max_size has a default value");
+        globals.log_max_size = log_max_size_str.parse().unwrap_or_else(|e| {
+            exit_with_error(&format!(
+                "Invalid log max size '{}': {}",
+                log_max_size_str, e
+            ))
+        });
+
+        let log_max_files_str = matches
+            .get_one::<String>("log_max_files")
+            .expect("log_max_files has a default value");
+        globals.log_max_files = log_max_files_str.parse().unwrap_or_else(|e| {
+            exit_with_error(&format!(
+                "Invalid log max files '{}': {}",
+                log_max_files_str, e
+            ))
+        });
+    } else {
+        globals.log_max_size = 100; // Default value
+        globals.log_max_files = 5; // Default value
+    }
 
     #[cfg(feature = "tls")]
     {

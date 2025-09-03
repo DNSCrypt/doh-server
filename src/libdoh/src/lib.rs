@@ -1,9 +1,11 @@
 mod constants;
 pub mod dns;
 mod dns_json;
+mod dns_parser;
 mod edns_ecs;
 mod errors;
 mod globals;
+pub mod logging;
 pub mod odoh;
 #[cfg(feature = "tls")]
 mod tls;
@@ -82,10 +84,7 @@ fn http_error_with_cache(status_code: StatusCode) -> Result<Response<Body>, http
     // Return error with very long cache time (1 year) to prevent crawler bots from retrying
     let response = Response::builder()
         .status(status_code)
-        .header(
-            hyper::header::CACHE_CONTROL,
-            "max-age=31536000, immutable"
-        )
+        .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
         .body(Body::empty())
         .unwrap();
     Ok(response)
@@ -165,7 +164,39 @@ impl DoH {
         &self,
         query: Vec<u8>,
         client_ip: Option<IpAddr>,
+        headers: &HeaderMap,
     ) -> Result<Response<Body>, http::Error> {
+        // Log the request if logging is enabled
+        if let Some(ref logger) = self.globals.logger {
+            // Extract query information
+            let query_info = dns_parser::parse_query_info(&query);
+            let (query_name, query_type) = if let Some(info) = query_info {
+                (info.name, info.qtype)
+            } else {
+                ("<invalid>".to_string(), 0)
+            };
+
+            // Extract User-Agent
+            let user_agent = headers
+                .get(hyper::header::USER_AGENT)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            // Log the request (fire and forget)
+            let logger_clone = logger.clone();
+            let query_name_clone = query_name.clone();
+            self.globals.runtime_handle.spawn(async move {
+                let _ = logger_clone
+                    .log_request(
+                        client_ip,
+                        &query_name_clone,
+                        query_type,
+                        user_agent.as_deref(),
+                    )
+                    .await;
+            });
+        }
+
         let resp = match self.proxy(query, client_ip).await {
             Ok(resp) => {
                 self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str(), true)
@@ -210,11 +241,12 @@ impl DoH {
             None
         };
 
+        let headers = req.headers().clone();
         let query = match self.query_from_query_string(req) {
             Some(query) => query,
             _ => return http_error_with_cache(StatusCode::BAD_REQUEST),
         };
-        self.serve_doh_query(query, client_ip).await
+        self.serve_doh_query(query, client_ip, &headers).await
     }
 
     async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
@@ -228,11 +260,12 @@ impl DoH {
             None
         };
 
+        let headers = req.headers().clone();
         let query = match self.read_body(req.into_body()).await {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
         };
-        self.serve_doh_query(query, client_ip).await
+        self.serve_doh_query(query, client_ip, &headers).await
     }
 
     async fn serve_odoh(&self, encrypted_query: Vec<u8>) -> Result<Response<Body>, http::Error> {
@@ -357,6 +390,24 @@ impl DoH {
             None
         };
 
+        // Log the request if logging is enabled
+        if let Some(ref logger) = self.globals.logger {
+            let user_agent = req
+                .headers()
+                .get(hyper::header::USER_AGENT)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            let logger_clone = logger.clone();
+            let query_name = json_query.name.clone();
+            let query_type = json_query.qtype.unwrap_or(1); // Default to A record
+            self.globals.runtime_handle.spawn(async move {
+                let _ = logger_clone
+                    .log_request(client_ip, &query_name, query_type, user_agent.as_deref())
+                    .await;
+            });
+        }
+
         // Send query and get response
         let dns_response = match self.proxy(query_packet, client_ip).await {
             Ok(resp) => resp,
@@ -437,10 +488,7 @@ impl DoH {
                         // Return NOT_ACCEPTABLE with long cache time for crawler bots
                         let response = Response::builder()
                             .status(StatusCode::NOT_ACCEPTABLE)
-                            .header(
-                                hyper::header::CACHE_CONTROL,
-                                "max-age=31536000, immutable"
-                            )
+                            .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
                             .body(Body::empty())
                             .unwrap();
                         return Err(response);
@@ -453,10 +501,7 @@ impl DoH {
                     // Return BAD_REQUEST with long cache time for invalid content type
                     let response = Response::builder()
                         .status(StatusCode::BAD_REQUEST)
-                        .header(
-                            hyper::header::CACHE_CONTROL,
-                            "max-age=31536000, immutable"
-                        )
+                        .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
                         .body(Body::empty())
                         .unwrap();
                     return Err(response);
@@ -473,10 +518,7 @@ impl DoH {
                 // Return UNSUPPORTED_MEDIA_TYPE with long cache time
                 let response = Response::builder()
                     .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
-                    .header(
-                        hyper::header::CACHE_CONTROL,
-                        "max-age=31536000, immutable"
-                    )
+                    .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
                     .body(Body::empty())
                     .unwrap();
                 Err(response)

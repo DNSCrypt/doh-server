@@ -87,9 +87,32 @@ fn main() {
         odoh_configs_path: ODOH_CONFIGS_PATH.to_string(),
         odoh_rotator: Arc::new(rotator),
 
+        log_file: None,
+        log_max_size: 100,
+        log_max_files: 5,
+        logger: None,
+
         runtime_handle: runtime.handle().clone(),
     };
     parse_opts(&mut globals);
+
+    // Initialize logger if configured
+    if let Some(ref log_path) = globals.log_file {
+        match runtime.block_on(libdoh::logging::RequestLogger::new(
+            log_path,
+            globals.log_max_size,
+            globals.log_max_files,
+        )) {
+            Ok(logger) => {
+                eprintln!("Request logging enabled: {}", log_path.display());
+                globals.logger = Some(Arc::new(logger));
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to initialize request logger: {}", e);
+            }
+        }
+    }
+
     let doh = DoH {
         globals: Arc::new(globals),
     };
