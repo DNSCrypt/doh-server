@@ -77,6 +77,20 @@ fn http_error(status_code: StatusCode) -> Result<Response<Body>, http::Error> {
     Ok(response)
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn http_error_with_cache(status_code: StatusCode) -> Result<Response<Body>, http::Error> {
+    // Return error with very long cache time (1 year) to prevent crawler bots from retrying
+    let response = Response::builder()
+        .status(status_code)
+        .header(
+            hyper::header::CACHE_CONTROL,
+            "max-age=31536000, immutable"
+        )
+        .body(Body::empty())
+        .unwrap();
+    Ok(response)
+}
+
 #[derive(Clone, Debug)]
 pub struct LocalExecutor {
     runtime_handle: runtime::Handle,
@@ -198,7 +212,7 @@ impl DoH {
 
         let query = match self.query_from_query_string(req) {
             Some(query) => query,
-            _ => return http_error(StatusCode::BAD_REQUEST),
+            _ => return http_error_with_cache(StatusCode::BAD_REQUEST),
         };
         self.serve_doh_query(query, client_ip).await
     }
@@ -245,7 +259,7 @@ impl DoH {
     async fn serve_odoh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
         let encrypted_query = match self.query_from_query_string(req) {
             Some(encrypted_query) => encrypted_query,
-            _ => return http_error(StatusCode::BAD_REQUEST),
+            _ => return http_error_with_cache(StatusCode::BAD_REQUEST),
         };
         self.serve_odoh(encrypted_query).await
     }
@@ -420,8 +434,13 @@ impl DoH {
                     Self::acceptable_content_type(headers, &[CT_DOH, CT_ODOH, CT_JSON]);
                 match acceptable_content_type {
                     None => {
+                        // Return NOT_ACCEPTABLE with long cache time for crawler bots
                         let response = Response::builder()
                             .status(StatusCode::NOT_ACCEPTABLE)
+                            .header(
+                                hyper::header::CACHE_CONTROL,
+                                "max-age=31536000, immutable"
+                            )
                             .body(Body::empty())
                             .unwrap();
                         return Err(response);
@@ -431,8 +450,13 @@ impl DoH {
             }
             Some(content_type) => match content_type.to_str() {
                 Err(_) => {
+                    // Return BAD_REQUEST with long cache time for invalid content type
                     let response = Response::builder()
                         .status(StatusCode::BAD_REQUEST)
+                        .header(
+                            hyper::header::CACHE_CONTROL,
+                            "max-age=31536000, immutable"
+                        )
                         .body(Body::empty())
                         .unwrap();
                     return Err(response);
@@ -446,8 +470,13 @@ impl DoH {
             CT_ODOH => Ok(DoHType::Oblivious),
             CT_JSON => Ok(DoHType::Json),
             _ => {
+                // Return UNSUPPORTED_MEDIA_TYPE with long cache time
                 let response = Response::builder()
                     .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+                    .header(
+                        hyper::header::CACHE_CONTROL,
+                        "max-age=31536000, immutable"
+                    )
                     .body(Body::empty())
                     .unwrap();
                 Err(response)
