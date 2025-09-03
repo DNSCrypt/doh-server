@@ -163,7 +163,8 @@ impl DoH {
     async fn serve_doh_query(
         &self,
         query: Vec<u8>,
-        client_ip: Option<IpAddr>,
+        ecs_client_ip: Option<IpAddr>,
+        log_client_ip: Option<IpAddr>,
         headers: &HeaderMap,
     ) -> Result<Response<Body>, http::Error> {
         // Log the request if logging is enabled
@@ -188,7 +189,7 @@ impl DoH {
             self.globals.runtime_handle.spawn(async move {
                 let _ = logger_clone
                     .log_request(
-                        client_ip,
+                        log_client_ip,
                         &query_name_clone,
                         query_type,
                         user_agent.as_deref(),
@@ -197,7 +198,7 @@ impl DoH {
             });
         }
 
-        let resp = match self.proxy(query, client_ip).await {
+        let resp = match self.proxy(query, ecs_client_ip).await {
             Ok(resp) => {
                 self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str(), true)
             }
@@ -235,18 +236,22 @@ impl DoH {
     }
 
     async fn serve_doh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        let client_ip = if self.globals.enable_ecs {
+        // Extract client IP for ECS (if enabled)
+        let ecs_client_ip = if self.globals.enable_ecs {
             edns_ecs::extract_client_ip(req.headers(), None)
         } else {
             None
         };
+        
+        // Always extract client IP for logging
+        let log_client_ip = edns_ecs::extract_client_ip(req.headers(), None);
 
         let headers = req.headers().clone();
         let query = match self.query_from_query_string(req) {
             Some(query) => query,
             _ => return http_error_with_cache(StatusCode::BAD_REQUEST),
         };
-        self.serve_doh_query(query, client_ip, &headers).await
+        self.serve_doh_query(query, ecs_client_ip, log_client_ip, &headers).await
     }
 
     async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
@@ -254,18 +259,22 @@ impl DoH {
             return http_error(StatusCode::METHOD_NOT_ALLOWED);
         }
 
-        let client_ip = if self.globals.enable_ecs {
+        // Extract client IP for ECS (if enabled)
+        let ecs_client_ip = if self.globals.enable_ecs {
             edns_ecs::extract_client_ip(req.headers(), None)
         } else {
             None
         };
+        
+        // Always extract client IP for logging
+        let log_client_ip = edns_ecs::extract_client_ip(req.headers(), None);
 
         let headers = req.headers().clone();
         let query = match self.read_body(req.into_body()).await {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
         };
-        self.serve_doh_query(query, client_ip, &headers).await
+        self.serve_doh_query(query, ecs_client_ip, log_client_ip, &headers).await
     }
 
     async fn serve_odoh(&self, encrypted_query: Vec<u8>) -> Result<Response<Body>, http::Error> {
@@ -383,12 +392,15 @@ impl DoH {
             }
         };
 
-        // Extract client IP if ECS is enabled
-        let client_ip = if self.globals.enable_ecs {
+        // Extract client IP for ECS (if enabled)
+        let ecs_client_ip = if self.globals.enable_ecs {
             edns_ecs::extract_client_ip(req.headers(), None)
         } else {
             None
         };
+        
+        // Always extract client IP for logging
+        let log_client_ip = edns_ecs::extract_client_ip(req.headers(), None);
 
         // Log the request if logging is enabled
         if let Some(ref logger) = self.globals.logger {
@@ -403,13 +415,13 @@ impl DoH {
             let query_type = json_query.qtype.unwrap_or(1); // Default to A record
             self.globals.runtime_handle.spawn(async move {
                 let _ = logger_clone
-                    .log_request(client_ip, &query_name, query_type, user_agent.as_deref())
+                    .log_request(log_client_ip, &query_name, query_type, user_agent.as_deref())
                     .await;
             });
         }
 
         // Send query and get response
-        let dns_response = match self.proxy(query_packet, client_ip).await {
+        let dns_response = match self.proxy(query_packet, ecs_client_ip).await {
             Ok(resp) => resp,
             Err(e) => return http_error(StatusCode::from(e)),
         };
