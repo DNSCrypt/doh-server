@@ -12,15 +12,15 @@ jobs:
     steps:
       - name: Get the version
         id: get_version
-        run: echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.14.0
 
-      - uses: hecrj/setup-rust-action@master
+      - uses: hecrj/setup-rust-action@v2
         with:
           rust-version: stable
 
