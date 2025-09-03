@@ -59,6 +59,16 @@ jobs:
           tar cjpf doh-proxy_${{ steps.get_version.outputs.VERSION }}_linux-aarch64.tar.bz2 doh-proxy
           rm -fr doh-proxy
 
+      - name: Release build Windows-x86_64
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+          env RUSTFLAGS="-C strip=symbols" CFLAGS="-Wno-date-time" cargo zigbuild --release --target x86_64-pc-windows-gnu
+          mkdir doh-proxy
+          mv target/x86_64-pc-windows-gnu/release/doh-proxy.exe doh-proxy/
+          cp README.md localhost.pem doh-proxy/
+          zip -9 -r doh-proxy_${{ steps.get_version.outputs.VERSION }}_windows-x86_64.zip doh-proxy
+          rm -fr doh-proxy
+
       - name: Debian packages
         run: |
           rustup target add x86_64-unknown-linux-musl
@@ -141,3 +151,14 @@ jobs:
           asset_name: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_linux-aarch64.tar.bz2"
           asset_path: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_linux-aarch64.tar.bz2"
           asset_content_type: application/x-tar
+
+      - name: Upload tarball for windows-x86_64
+        id: upload-release-asset-tarball-windows-x86_64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_name: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_windows-x86_64.zip"
+          asset_path: "doh-proxy_${{ steps.get_version.outputs.VERSION }}_windows-x86_64.zip"
+          asset_content_type: application/zip
