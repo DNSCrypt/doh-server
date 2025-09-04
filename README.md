@@ -466,7 +466,6 @@ This [Go code snippet](https://gist.github.com/d6cb41742a1ceb54d48cc286f3d5c5fa)
 
 ### Background
 
-[DNS Stamps](https://dnscrypt.info/stamps-specifications) provide a compact, authenticated way to describe a DNS resolver.
 For **DNSCrypt resolvers**, the stamp includes the resolver’s **public key**, ensuring authenticity by design.
 
 For **DoH (DNS-over-HTTPS) resolvers**, however, authenticity normally depends only on the **WebPKI** (the set of trusted Certificate Authorities in the system). By default, **any trusted CA** can issue a valid TLS certificate for your DoH server’s domain.
