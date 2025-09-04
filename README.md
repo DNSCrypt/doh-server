@@ -40,6 +40,10 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
   - [Oblivious DoH (ODoH)](#oblivious-doh-odoh)
   - [Operational recommendations](#operational-recommendations)
   - [DNS Stamps and Certificate Hashes](#dns-stamps-and-certificate-hashes)
+  - [Why Certificate Hashes in DoH Stamps Matter](#why-certificate-hashes-in-doh-stamps-matter)
+    - [Background](#background)
+    - [Why They’re Important](#why-theyre-important)
+    - [How Certificate Hashes Work in Stamps](#how-certificate-hashes-work-in-stamps)
     - [Common certificate hashes](#common-certificate-hashes)
   - [Troubleshooting](#troubleshooting)
     - [Common Issues](#common-issues)
@@ -427,7 +431,6 @@ This can be achieved with the `--allow-odoh-post` command-line switch.
 * Make sure that the front-end supports at least HTTP/2 and TLS 1.3.
 * Internal DoH servers still require TLS certificates. So, if you are planning to deploy an internal server, you need to set up an internal CA, or add self-signed certificates to every single client.
 
-
 ## DNS Stamps and Certificate Hashes
 
 Use the online [DNS stamp calculator](https://dnscrypt.info/stamps/) to compute the stamp for your server.
@@ -458,6 +461,38 @@ Advertised cert: [CN=Let's Encrypt Authority R3,O=Let's Encrypt,C=US] [444ebd67b
 There you have it. Your certificate hash is `444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce`.
 
 This [Go code snippet](https://gist.github.com/d6cb41742a1ceb54d48cc286f3d5c5fa) can also compute the hash of certificates given a `.der` file.
+
+## Why Certificate Hashes in DoH Stamps Matter
+
+### Background
+
+[DNS Stamps](https://dnscrypt.info/stamps-specifications) provide a compact, authenticated way to describe a DNS resolver.
+For **DNSCrypt resolvers**, the stamp includes the resolver’s **public key**, ensuring authenticity by design.
+
+For **DoH (DNS-over-HTTPS) resolvers**, however, authenticity normally depends only on the **WebPKI** (the set of trusted Certificate Authorities in the system). By default, **any trusted CA** can issue a valid TLS certificate for your DoH server’s domain.
+
+This is where **certificate hashes in stamps** come in.
+
+### Why They’re Important
+
+1. **Defends against MITM via extra CAs**
+   Many systems have extra root CAs installed by enterprises, antivirus tools, or governments.
+   Without pinning, these CAs can issue certificates for your DoH domain and intercept queries.
+   Including certificate hashes ensures the client only accepts the *intended* TLS chain.
+
+2. **Prevents silent domain takeover**
+   If your DoH hostname changes ownership, the new owner can obtain a valid certificate and impersonate your resolver.
+   Pinning the parent certificate’s hash (ideally a dedicated intermediate CA) ensures the client rejects impostors.
+
+3. **Restores DNSCrypt-level assurance**
+   DNSCrypt stamps always bind to a known key.
+   With certificate hashes, DoH stamps gain a similar property: encryption **and** authenticity.
+
+### How Certificate Hashes Work in Stamps
+
+* A DoH stamp can include **one or more SHA-256 hashes** of certificates in the resolver’s TLS chain.
+* A client must see **at least one matching certificate hash** when connecting.
+* Operators can list multiple hashes to support certificate rotations smoothly.
 
 ### Common certificate hashes
 
