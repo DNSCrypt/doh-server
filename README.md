@@ -4,9 +4,9 @@
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Crates.io](https://img.shields.io/crates/v/doh-proxy.svg)](https://crates.io/crates/doh-proxy)
 
-A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
+A fast and secure DoH (DNS-over-HTTPS), DoQ (DNS-over-QUIC), and ODoH (Oblivious DoH) server.
 
-`doh-proxy` is written in Rust, and has been battle-tested in production since February 2018. It doesn't do DNS resolution on its own, but can sit in front of any DNS resolver in order to augment it with DoH support.
+`doh-proxy` is written in Rust, and has been battle-tested in production since February 2018. It doesn't do DNS resolution on its own, but can sit in front of any DNS resolver in order to augment it with DoH, DoQ, and ODoH support.
 
 ## Table of Contents
 
@@ -56,6 +56,7 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 ## Features
 
 - **DNS-over-HTTPS (DoH)** - Encrypts DNS queries using HTTPS
+- **DNS-over-QUIC (DoQ)** - Encrypts DNS queries using QUIC protocol (RFC 9250)
 - **JSON API Support** - Compatible with Google DNS-over-HTTPS JSON API format
 - **Oblivious DoH (ODoH)** - Provides additional privacy by hiding client IP addresses
 - **EDNS Client Subnet** - Forward client IP information to upstream resolvers for geo-optimized responses
@@ -139,6 +140,9 @@ OPTIONS:
     --enable-ecs                              Enable EDNS Client Subnet
     --ecs-prefix-v4 <ecs_prefix_v4>         IPv4 prefix length for EDNS Client Subnet [default: 24]
     --ecs-prefix-v6 <ecs_prefix_v6>         IPv6 prefix length for EDNS Client Subnet [default: 56]
+    --enable-doq                             Enable DNS-over-QUIC (DoQ) server on UDP port 853
+    --doq-port <doq_port>                    UDP port for DNS-over-QUIC server [default: 853]
+    --doq-idle-timeout <doq_idle_timeout>    Idle timeout for DoQ connections in seconds [default: 30]
 ```
 
 ### Example Configurations
@@ -169,6 +173,17 @@ doh-proxy -H 'doh.example.com' \
 ```sh
 doh-proxy -H 'doh.example.com' -u 127.0.0.1:53 -l 127.0.0.1:3000
 ```
+
+**With DNS-over-QUIC (DoQ) support:**
+```sh
+doh-proxy -H 'doh.example.com' \
+          -u 127.0.0.1:53 \
+          -i /path/to/cert.pem \
+          -I /path/to/key.pem \
+          --enable-doq \
+          --doq-port 853
+```
+This enables both DoH on HTTPS port and DoQ on UDP port 853.
 
 ## Deployment Architectures
 
@@ -408,6 +423,71 @@ curl -H "X-Forwarded-For: 1.2.3.4" \
 - **Logging**: The proxy does not log client IPs when ECS is enabled, but upstream resolvers might.
 
 For maximum privacy, avoid enabling ECS or use larger prefix values (smaller subnets) like /8 for IPv4 or /32 for IPv6.
+
+## DNS-over-QUIC (DoQ)
+
+### Overview
+
+DNS-over-QUIC (DoQ) is specified in RFC 9250 and provides DNS transport over the QUIC protocol. It offers similar privacy properties to DoH but with improved performance characteristics:
+
+- **Zero Round-Trip Time (0-RTT)**: Faster connection establishment for returning clients
+- **No Head-of-Line Blocking**: Independent stream delivery prevents one slow query from blocking others
+- **Connection Migration**: Maintains connections even when client IP addresses change
+- **Lower Latency**: QUIC's efficient packet loss recovery and congestion control
+
+### Configuration
+
+Enable DoQ support with the following command-line options:
+
+- `--enable-doq` - Enable DNS-over-QUIC server
+- `--doq-port <port>` - UDP port for DoQ (default: 853)
+- `--doq-idle-timeout <seconds>` - Connection idle timeout (default: 30)
+
+### Examples
+
+**Basic DoQ setup:**
+```sh
+doh-proxy -H 'dns.example.com' \
+          -u 127.0.0.1:53 \
+          -i /path/to/cert.pem \
+          -I /path/to/key.pem \
+          --enable-doq
+```
+
+**DoQ with custom port and timeout:**
+```sh
+doh-proxy -H 'dns.example.com' \
+          -u 127.0.0.1:53 \
+          -i /path/to/cert.pem \
+          -I /path/to/key.pem \
+          --enable-doq \
+          --doq-port 8853 \
+          --doq-idle-timeout 60
+```
+
+**Combined DoH and DoQ:**
+```sh
+doh-proxy -H 'dns.example.com' \
+          -u 127.0.0.1:53 \
+          -l 0.0.0.0:443 \
+          -i /path/to/cert.pem \
+          -I /path/to/key.pem \
+          --enable-doq
+```
+This configuration serves DoH on TCP port 443 and DoQ on UDP port 853.
+
+### Client Configuration
+
+DoQ clients can connect using:
+- Protocol: DNS-over-QUIC (RFC 9250)
+- Port: UDP 853 (default)
+- ALPN: "doq"
+
+### Requirements
+
+- TLS certificates are required (same certificates used for DoH)
+- UDP port 853 must be accessible (or custom port if configured)
+- QUIC uses UDP, ensure firewalls allow UDP traffic
 
 ## Oblivious DoH (ODoH)
 

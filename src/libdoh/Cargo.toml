@@ -43,6 +43,9 @@ tokio-rustls = { version = "^0.24.1", features = [
     "early-data",
 ], optional = true }
 rustls-pemfile = "^1.0.4"
+quiche = { version = "0.21", features = ["boringssl-vendored"] }
+ring = "0.17"
+mio = { version = "1.0", features = ["net", "os-poll"] }
 
 [profile.release]
 codegen-units = 1

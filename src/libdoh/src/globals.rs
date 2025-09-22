@@ -36,6 +36,9 @@ pub struct Globals {
     pub ecs_prefix_v6: u8,
     pub odoh_configs_path: String,
     pub odoh_rotator: Arc<ODoHRotator>,
+    pub enable_doq: bool,
+    pub doq_port: u16,
+    pub doq_idle_timeout: u64,
 
     pub runtime_handle: runtime::Handle,
 }

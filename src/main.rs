@@ -86,13 +86,27 @@ fn main() {
         ecs_prefix_v6: 56,
         odoh_configs_path: ODOH_CONFIGS_PATH.to_string(),
         odoh_rotator: Arc::new(rotator),
+        enable_doq: false,
+        doq_port: 853,
+        doq_idle_timeout: 30,
 
         runtime_handle: runtime.handle().clone(),
     };
     parse_opts(&mut globals);
+    let globals_arc = Arc::new(globals);
     let doh = DoH {
-        globals: Arc::new(globals),
+        globals: globals_arc.clone(),
     };
+
+    // Start DoQ server if enabled
+    if globals_arc.enable_doq {
+        let doq_globals = globals_arc.clone();
+        runtime.spawn(async move {
+            if let Err(e) = libdoh::doq::start_doq_server(doq_globals).await {
+                eprintln!("Error: Failed to start DoQ server: {}", e);
+            }
+        });
+    }
 
     if let Err(e) = runtime.block_on(doh.entrypoint()) {
         eprintln!("Error: Failed to start DoH server: {}", e);

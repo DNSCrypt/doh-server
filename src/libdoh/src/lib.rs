@@ -1,6 +1,7 @@
 mod constants;
 pub mod dns;
 mod dns_json;
+pub mod doq;
 mod edns_ecs;
 mod errors;
 mod globals;

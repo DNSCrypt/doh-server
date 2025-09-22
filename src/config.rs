@@ -169,6 +169,26 @@ pub fn parse_opts(globals: &mut Globals) {
                 .num_args(1)
                 .default_value("56")
                 .help("EDNS Client Subnet prefix length for IPv6 addresses"),
+        )
+        .arg(
+            Arg::new("enable_doq")
+                .long("enable-doq")
+                .action(SetTrue)
+                .help("Enable DNS-over-QUIC (DoQ) server on UDP port 853"),
+        )
+        .arg(
+            Arg::new("doq_port")
+                .long("doq-port")
+                .num_args(1)
+                .default_value("853")
+                .help("UDP port for DNS-over-QUIC server"),
+        )
+        .arg(
+            Arg::new("doq_idle_timeout")
+                .long("doq-idle-timeout")
+                .num_args(1)
+                .default_value("30")
+                .help("Idle timeout for DoQ connections in seconds"),
         );
 
     #[cfg(feature = "tls")]
@@ -299,6 +319,7 @@ pub fn parse_opts(globals: &mut Globals) {
     globals.disable_post = matches.get_flag("disable_post");
     globals.allow_odoh_post = matches.get_flag("allow_odoh_post");
     globals.enable_ecs = matches.get_flag("enable_ecs");
+    globals.enable_doq = matches.get_flag("enable_doq");
 
     // Parse ECS prefix lengths
     let ecs_prefix_v4_str = matches
@@ -318,6 +339,27 @@ pub fn parse_opts(globals: &mut Globals) {
         exit_with_error(&format!(
             "Invalid ECS IPv6 prefix '{}': {}",
             ecs_prefix_v6_str, e
+        ))
+    });
+
+    // Parse DoQ configuration
+    let doq_port_str = matches
+        .get_one::<String>("doq_port")
+        .expect("doq_port has a default value");
+    globals.doq_port = doq_port_str.parse().unwrap_or_else(|e| {
+        exit_with_error(&format!(
+            "Invalid DoQ port '{}': {}",
+            doq_port_str, e
+        ))
+    });
+
+    let doq_idle_timeout_str = matches
+        .get_one::<String>("doq_idle_timeout")
+        .expect("doq_idle_timeout has a default value");
+    globals.doq_idle_timeout = doq_idle_timeout_str.parse().unwrap_or_else(|e| {
+        exit_with_error(&format!(
+            "Invalid DoQ idle timeout '{}': {}",
+            doq_idle_timeout_str, e
         ))
     });
 
