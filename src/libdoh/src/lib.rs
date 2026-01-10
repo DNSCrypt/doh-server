@@ -40,6 +40,10 @@ const BASE64_URL_SAFE_NO_PAD: base64::engine::GeneralPurpose =
             .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
     );
 
+// Cache time for error responses (24 hours)
+// Prevents crawler bots from repeatedly retrying invalid requests
+const ERROR_CACHE_SECS: u32 = 86400;
+
 #[derive(Clone, Debug)]
 struct DnsResponse {
     packet: Vec<u8>,
@@ -74,18 +78,21 @@ fn http_error(status_code: StatusCode) -> Result<Response<Body>, http::Error> {
     let response = Response::builder()
         .status(status_code)
         .body(Body::empty())
-        .unwrap();
+        .expect("Failed to build HTTP error response");
     Ok(response)
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn http_error_with_cache(status_code: StatusCode) -> Result<Response<Body>, http::Error> {
-    // Return error with very long cache time (1 year) to prevent crawler bots from retrying
+    // Return error with 24 hour cache time to prevent crawler bots from retrying
     let response = Response::builder()
         .status(status_code)
-        .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
+        .header(
+            hyper::header::CACHE_CONTROL,
+            format!("max-age={}, immutable", ERROR_CACHE_SECS),
+        )
         .body(Body::empty())
-        .unwrap();
+        .expect("Failed to build HTTP error response with cache");
     Ok(response)
 }
 
@@ -234,6 +241,10 @@ impl DoH {
     }
 
     async fn serve_odoh(&self, encrypted_query: Vec<u8>) -> Result<Response<Body>, http::Error> {
+        // Clone the Arc to get the current public key for ODoH decryption
+        // The double-clone pattern ((*arc).clone()) is needed because:
+        // 1. First dereference gets the inner value from Arc
+        // 2. Then clone() creates a new owned instance that can be used across await points
         let odoh_public_key = (*self.globals.odoh_rotator).clone().current_public_key();
         let (query, context) = match (*odoh_public_key).clone().decrypt_query(encrypted_query) {
             Ok((q, context)) => (q.to_vec(), context),
@@ -287,11 +298,8 @@ impl DoH {
         }
     }
 
-    async fn serve_json_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
-        use serde_json::json;
-
-        // Parse query parameters
-        let query_params = req.uri().query().unwrap_or("");
+    /// Parse query parameters from URL query string into DnsJsonQuery
+    fn parse_json_query_params(query_string: &str) -> dns_json::DnsJsonQuery {
         let mut json_query = dns_json::DnsJsonQuery {
             name: String::new(),
             qtype: None,
@@ -301,8 +309,7 @@ impl DoH {
             edns_client_subnet: None,
         };
 
-        // Parse query string
-        for parts in query_params.split('&') {
+        for parts in query_string.split('&') {
             let mut kv = parts.split('=');
             if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
                 match k {
@@ -319,49 +326,36 @@ impl DoH {
             }
         }
 
-        // Validate query
-        if json_query.name.is_empty() {
-            let error_response = json!({
-                "Status": 400,
-                "Comment": "Missing 'name' parameter"
-            });
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .header(hyper::header::CONTENT_TYPE, "application/dns-json")
-                .body(Body::from(error_response.to_string()))
-                .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR));
+        json_query
+    }
+
+    /// Validate that the JSON query has required fields
+    fn validate_json_query(query: &dns_json::DnsJsonQuery) -> Result<(), String> {
+        if query.name.is_empty() {
+            return Err("Missing 'name' parameter".to_string());
         }
+        Ok(())
+    }
 
-        // Build DNS query packet
-        let query_packet = match dns_json::build_dns_query(&json_query) {
-            Ok(packet) => packet,
-            Err(e) => {
-                let error_response = json!({
-                    "Status": 400,
-                    "Comment": format!("Invalid query: {}", e)
-                });
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .header(hyper::header::CONTENT_TYPE, "application/dns-json")
-                    .body(Body::from(error_response.to_string()))
-                    .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR));
-            }
-        };
+    /// Build a JSON error response
+    fn json_error_response(status: StatusCode, message: String) -> Result<Response<Body>, http::Error> {
+        use serde_json::json;
+        
+        let status_code = status.as_u16();
+        let error_response = json!({
+            "Status": status_code,
+            "Comment": message
+        });
+        
+        Response::builder()
+            .status(status)
+            .header(hyper::header::CONTENT_TYPE, "application/dns-json")
+            .body(Body::from(error_response.to_string()))
+            .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR))
+    }
 
-        // Extract client IP if ECS is enabled
-        let client_ip = if self.globals.enable_ecs {
-            edns_ecs::extract_client_ip(req.headers(), self.remote_addr)
-        } else {
-            None
-        };
-
-        // Send query and get response
-        let dns_response = match self.proxy(query_packet, client_ip).await {
-            Ok(resp) => resp,
-            Err(e) => return http_error(StatusCode::from(e)),
-        };
-
-        // Parse DNS response to JSON
+    /// Format DNS response as JSON with appropriate headers
+    fn format_json_response(dns_response: &DnsResponse) -> Result<Response<Body>, http::Error> {
         match dns_json::parse_dns_to_json(&dns_response.packet) {
             Ok(json_response) => {
                 let json_string = match serde_json::to_string(&json_response) {
@@ -384,17 +378,50 @@ impl DoH {
                     .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR))
             }
             Err(e) => {
-                let error_response = json!({
-                    "Status": 500,
-                    "Comment": format!("Failed to parse DNS response: {}", e)
-                });
-                Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .header(hyper::header::CONTENT_TYPE, "application/dns-json")
-                    .body(Body::from(error_response.to_string()))
-                    .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR))
+                Self::json_error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to parse DNS response: {}", e),
+                )
             }
         }
+    }
+
+    async fn serve_json_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+        // Parse query parameters
+        let query_params = req.uri().query().unwrap_or("");
+        let json_query = Self::parse_json_query_params(query_params);
+
+        // Validate query
+        if let Err(msg) = Self::validate_json_query(&json_query) {
+            return Self::json_error_response(StatusCode::BAD_REQUEST, msg);
+        }
+
+        // Build DNS query packet
+        let query_packet = match dns_json::build_dns_query(&json_query) {
+            Ok(packet) => packet,
+            Err(e) => {
+                return Self::json_error_response(
+                    StatusCode::BAD_REQUEST,
+                    format!("Invalid query: {}", e),
+                );
+            }
+        };
+
+        // Extract client IP if ECS is enabled
+        let client_ip = if self.globals.enable_ecs {
+            edns_ecs::extract_client_ip(req.headers(), self.remote_addr)
+        } else {
+            None
+        };
+
+        // Send query and get response
+        let dns_response = match self.proxy(query_packet, client_ip).await {
+            Ok(resp) => resp,
+            Err(e) => return http_error(StatusCode::from(e)),
+        };
+
+        // Format and return JSON response
+        Self::format_json_response(&dns_response)
     }
 
     fn acceptable_content_type(
@@ -432,12 +459,15 @@ impl DoH {
                     Self::acceptable_content_type(headers, &[CT_DOH, CT_ODOH, CT_JSON]);
                 match acceptable_content_type {
                     None => {
-                        // Return NOT_ACCEPTABLE with long cache time for crawler bots
+                        // Return NOT_ACCEPTABLE with 24 hour cache time for crawler bots
                         let response = Response::builder()
                             .status(StatusCode::NOT_ACCEPTABLE)
-                            .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
+                            .header(
+                                hyper::header::CACHE_CONTROL,
+                                format!("max-age={}, immutable", ERROR_CACHE_SECS),
+                            )
                             .body(Body::empty())
-                            .unwrap();
+                            .expect("Failed to build NOT_ACCEPTABLE response");
                         return Err(Box::new(response));
                     }
                     Some(content_type) => content_type,
@@ -445,12 +475,15 @@ impl DoH {
             }
             Some(content_type) => match content_type.to_str() {
                 Err(_) => {
-                    // Return BAD_REQUEST with long cache time for invalid content type
+                    // Return BAD_REQUEST with 24 hour cache time for invalid content type
                     let response = Response::builder()
                         .status(StatusCode::BAD_REQUEST)
-                        .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
+                        .header(
+                            hyper::header::CACHE_CONTROL,
+                            format!("max-age={}, immutable", ERROR_CACHE_SECS),
+                        )
                         .body(Body::empty())
-                        .unwrap();
+                        .expect("Failed to build BAD_REQUEST response");
                     return Err(Box::new(response));
                 }
                 Ok(content_type) => content_type,
@@ -462,12 +495,15 @@ impl DoH {
             CT_ODOH => Ok(DoHType::Oblivious),
             CT_JSON => Ok(DoHType::Json),
             _ => {
-                // Return UNSUPPORTED_MEDIA_TYPE with long cache time
+                // Return UNSUPPORTED_MEDIA_TYPE with 24 hour cache time
                 let response = Response::builder()
                     .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
-                    .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
+                    .header(
+                        hyper::header::CACHE_CONTROL,
+                        format!("max-age={}, immutable", ERROR_CACHE_SECS),
+                    )
                     .body(Body::empty())
-                    .unwrap();
+                    .expect("Failed to build UNSUPPORTED_MEDIA_TYPE response");
                 Err(Box::new(response))
             }
         }
@@ -516,7 +552,11 @@ impl DoH {
                     self.globals.ecs_prefix_v4,
                     self.globals.ecs_prefix_v6,
                 ) {
-                    eprintln!("Failed to add EDNS Client Subnet: {}", e);
+                    tracing::warn!(
+                        error = %e,
+                        client_ip = %client_ip,
+                        "Failed to add EDNS Client Subnet to DNS packet"
+                    );
                 }
             }
         }
@@ -524,7 +564,7 @@ impl DoH {
         let mut packet = vec![0; MAX_DNS_RESPONSE_LEN];
         let (min_ttl, max_ttl, err_ttl) = (globals.min_ttl, globals.max_ttl, globals.err_ttl);
 
-        // UDP
+        // UDP - Try to send query via UDP first (faster, preferred method)
         {
             let socket = UdpSocket::bind(&globals.local_bind_address)
                 .await
@@ -542,12 +582,22 @@ impl DoH {
             packet.truncate(len);
         }
 
-        // TCP
+        // TCP - Fallback to TCP if response was truncated (TC bit set)
+        // DNS over TCP is used when response size exceeds UDP packet limits
         if dns::is_truncated(&packet) {
+            // Rate limiting: Limit TCP sessions to prevent resource exhaustion
+            // Only allow TCP sessions if less than (max_clients / UDP_TCP_RATIO) are active
+            // This ensures UDP (the faster, preferred method) gets priority
             let clients_count = self.globals.clients_count.current();
             if self.globals.max_clients >= UDP_TCP_RATIO
                 && clients_count >= self.globals.max_clients / UDP_TCP_RATIO
             {
+                tracing::warn!(
+                    current_clients = clients_count,
+                    max_clients = self.globals.max_clients,
+                    tcp_threshold = self.globals.max_clients / UDP_TCP_RATIO,
+                    "TCP session rejected due to rate limiting"
+                );
                 return Err(DoHError::TooManyTcpSessions);
             }
             let socket = match globals.server_address {
@@ -560,6 +610,8 @@ impl DoH {
                 .await
                 .map_err(DoHError::Io)?;
             ext_socket.set_nodelay(true).map_err(DoHError::Io)?;
+            // DNS over TCP uses a 2-byte length prefix (RFC 1035 section 4.2.2)
+            // This helps delimit messages in the TCP stream
             let mut binlen = [0u8, 0];
             BigEndian::write_u16(&mut binlen, query.len() as u16);
             ext_socket.write_all(&binlen).await.map_err(DoHError::Io)?;
@@ -588,6 +640,9 @@ impl DoH {
                 Ok(ttl) => ttl,
             }
         };
+        // Add EDNS padding to help protect against traffic analysis
+        // Padding adds random bytes to make packet sizes less predictable,
+        // improving privacy by preventing size-based fingerprinting
         dns::add_edns_padding(&mut packet)
             .map_err(|_| DoHError::TooLarge)
             .ok();
