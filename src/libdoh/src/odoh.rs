@@ -7,7 +7,7 @@ use odoh_rs::{
     Deserialize, ObliviousDoHConfig, ObliviousDoHConfigs, ObliviousDoHKeyPair, ObliviousDoHMessage,
     ObliviousDoHMessagePlaintext, OdohSecret, ResponseNonce, Serialize,
 };
-use rand::Rng;
+use rand_core_compat::Rng010;
 use tokio::runtime;
 
 use crate::constants::ODOH_KEY_ROTATION_SECS;
@@ -33,7 +33,8 @@ pub struct ODoHQueryContext {
 
 impl ODoHPublicKey {
     pub fn new() -> Result<ODoHPublicKey, DoHError> {
-        let key_pair = ObliviousDoHKeyPair::new(&mut rand::rng());
+        let mut rng = Rng010(rand::rng());
+        let key_pair = ObliviousDoHKeyPair::new(&mut rng);
         let config = ObliviousDoHConfig::from(key_pair.public().clone());
         let mut serialized_configs = Vec::new();
         ObliviousDoHConfigs::from(vec![config])
@@ -77,7 +78,7 @@ impl ODoHPublicKey {
 
 impl ODoHQueryContext {
     pub fn encrypt_response(self, response_body: Vec<u8>) -> Result<Vec<u8>, DoHError> {
-        let response_nonce = rand::rng().random::<ResponseNonce>();
+        let response_nonce = rand::random::<ResponseNonce>();
         let response_body_ = ObliviousDoHMessagePlaintext::new(response_body, 0);
         let encrypted_response = odoh_rs::encrypt_response(
             &self.query,

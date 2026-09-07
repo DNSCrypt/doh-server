@@ -15,11 +15,13 @@ use std::time::Duration;
 
 use base64::engine::Engine;
 use byteorder::{BigEndian, ByteOrder};
+use bytes::Bytes;
 use futures::prelude::*;
-use futures::task::{Context, Poll};
+use http_body_util::{BodyExt, Full};
 use hyper::http;
-use hyper::server::conn::Http;
-use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode};
+use hyper::{body::Incoming as IncomingBody, HeaderMap, Method, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
+use hyper_util::server::conn::auto::Builder as HttpBuilder;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, UdpSocket};
 use tokio::runtime;
@@ -31,6 +33,8 @@ pub use crate::globals::*;
 pub mod reexports {
     pub use tokio;
 }
+
+type Body = Full<Bytes>;
 
 const BASE64_URL_SAFE_NO_PAD: base64::engine::GeneralPurpose =
     base64::engine::general_purpose::GeneralPurpose::new(
@@ -73,7 +77,7 @@ pub struct DoH {
 fn http_error(status_code: StatusCode) -> Result<Response<Body>, http::Error> {
     let response = Response::builder()
         .status(status_code)
-        .body(Body::empty())
+        .body(Body::new(Bytes::new()))
         .unwrap();
     Ok(response)
 }
@@ -84,7 +88,7 @@ fn http_error_with_cache(status_code: StatusCode) -> Result<Response<Body>, http
     let response = Response::builder()
         .status(status_code)
         .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
-        .body(Body::empty())
+        .body(Body::new(Bytes::new()))
         .unwrap();
     Ok(response)
 }
@@ -111,16 +115,12 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-impl hyper::service::Service<http::Request<Body>> for DoH {
+impl hyper::service::Service<http::Request<IncomingBody>> for DoH {
     type Error = http::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
     type Response = Response<Body>;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
+    fn call(&self, req: Request<IncomingBody>) -> Self::Future {
         let globals = &self.globals;
         let self_inner = self.clone();
         if req.uri().path() == globals.path {
@@ -141,7 +141,7 @@ impl hyper::service::Service<http::Request<Body>> for DoH {
 }
 
 impl DoH {
-    async fn serve_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_get(&self, req: Request<IncomingBody>) -> Result<Response<Body>, http::Error> {
         let mut response = match Self::parse_content_type(&req) {
             Ok(DoHType::Standard) => self.serve_doh_get(req).await,
             Ok(DoHType::Oblivious) => self.serve_odoh_get(req).await,
@@ -155,7 +155,7 @@ impl DoH {
         Ok(response)
     }
 
-    async fn serve_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_post(&self, req: Request<IncomingBody>) -> Result<Response<Body>, http::Error> {
         match Self::parse_content_type(&req) {
             Ok(DoHType::Standard) => self.serve_doh_post(req).await,
             Ok(DoHType::Oblivious) => self.serve_odoh_post(req).await,
@@ -181,7 +181,7 @@ impl DoH {
         }
     }
 
-    fn query_from_query_string(&self, req: Request<Body>) -> Option<Vec<u8>> {
+    fn query_from_query_string(&self, req: Request<IncomingBody>) -> Option<Vec<u8>> {
         let http_query = req.uri().query().unwrap_or("");
         let mut question_str = None;
         for parts in http_query.split('&') {
@@ -206,7 +206,10 @@ impl DoH {
         Some(query)
     }
 
-    async fn serve_doh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_doh_get(
+        &self,
+        req: Request<IncomingBody>,
+    ) -> Result<Response<Body>, http::Error> {
         let client_ip = if self.globals.enable_ecs {
             edns_ecs::extract_client_ip(req.headers(), self.remote_addr)
         } else {
@@ -220,7 +223,10 @@ impl DoH {
         self.serve_doh_query(query, client_ip).await
     }
 
-    async fn serve_doh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_doh_post(
+        &self,
+        req: Request<IncomingBody>,
+    ) -> Result<Response<Body>, http::Error> {
         if self.globals.disable_post {
             return http_error(StatusCode::METHOD_NOT_ALLOWED);
         }
@@ -259,7 +265,10 @@ impl DoH {
         }
     }
 
-    async fn serve_odoh_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_odoh_get(
+        &self,
+        req: Request<IncomingBody>,
+    ) -> Result<Response<Body>, http::Error> {
         let encrypted_query = match self.query_from_query_string(req) {
             Some(encrypted_query) => encrypted_query,
             _ => return http_error_with_cache(StatusCode::BAD_REQUEST),
@@ -267,7 +276,10 @@ impl DoH {
         self.serve_odoh(encrypted_query).await
     }
 
-    async fn serve_odoh_post(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_odoh_post(
+        &self,
+        req: Request<IncomingBody>,
+    ) -> Result<Response<Body>, http::Error> {
         if self.globals.disable_post && !self.globals.allow_odoh_post {
             return http_error(StatusCode::METHOD_NOT_ALLOWED);
         }
@@ -292,7 +304,10 @@ impl DoH {
         }
     }
 
-    async fn serve_json_get(&self, req: Request<Body>) -> Result<Response<Body>, http::Error> {
+    async fn serve_json_get(
+        &self,
+        req: Request<IncomingBody>,
+    ) -> Result<Response<Body>, http::Error> {
         use serde_json::json;
 
         // Parse query parameters
@@ -333,7 +348,7 @@ impl DoH {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .header(hyper::header::CONTENT_TYPE, "application/dns-json")
-                .body(Body::from(error_response.to_string()))
+                .body(Body::new(Bytes::from(error_response.to_string())))
                 .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR));
         }
 
@@ -348,7 +363,7 @@ impl DoH {
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .header(hyper::header::CONTENT_TYPE, "application/dns-json")
-                    .body(Body::from(error_response.to_string()))
+                    .body(Body::new(Bytes::from(error_response.to_string())))
                     .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR));
             }
         };
@@ -385,7 +400,7 @@ impl DoH {
                         ),
                     )
                     .header(hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                    .body(Body::from(json_string))
+                    .body(Body::new(Bytes::from(json_string)))
                     .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR))
             }
             Err(e) => {
@@ -396,7 +411,7 @@ impl DoH {
                 Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .header(hyper::header::CONTENT_TYPE, "application/dns-json")
-                    .body(Body::from(error_response.to_string()))
+                    .body(Body::new(Bytes::from(error_response.to_string())))
                     .or_else(|_| http_error(StatusCode::INTERNAL_SERVER_ERROR))
             }
         }
@@ -425,7 +440,7 @@ impl DoH {
         None
     }
 
-    fn parse_content_type(req: &Request<Body>) -> Result<DoHType, Box<Response<Body>>> {
+    fn parse_content_type(req: &Request<IncomingBody>) -> Result<DoHType, Box<Response<Body>>> {
         const CT_DOH: &str = "application/dns-message";
         const CT_ODOH: &str = "application/oblivious-dns-message";
         const CT_JSON: &str = "application/dns-json";
@@ -441,7 +456,7 @@ impl DoH {
                         let response = Response::builder()
                             .status(StatusCode::NOT_ACCEPTABLE)
                             .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
-                            .body(Body::empty())
+                            .body(Body::new(Bytes::new()))
                             .unwrap();
                         return Err(Box::new(response));
                     }
@@ -454,7 +469,7 @@ impl DoH {
                     let response = Response::builder()
                         .status(StatusCode::BAD_REQUEST)
                         .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
-                        .body(Body::empty())
+                        .body(Body::new(Bytes::new()))
                         .unwrap();
                     return Err(Box::new(response));
                 }
@@ -471,18 +486,21 @@ impl DoH {
                 let response = Response::builder()
                     .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
                     .header(hyper::header::CACHE_CONTROL, "max-age=31536000, immutable")
-                    .body(Body::empty())
+                    .body(Body::new(Bytes::new()))
                     .unwrap();
                 Err(Box::new(response))
             }
         }
     }
 
-    async fn read_body(&self, mut body: Body) -> Result<Vec<u8>, DoHError> {
+    async fn read_body(&self, mut body: IncomingBody) -> Result<Vec<u8>, DoHError> {
         let mut sum_size = 0;
         let mut query = vec![];
-        while let Some(chunk) = body.next().await {
-            let chunk = chunk.map_err(|_| DoHError::TooLarge)?;
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|_| DoHError::TooLarge)?;
+            let Some(chunk) = frame.data_ref() else {
+                continue;
+            };
             sum_size += chunk.len();
             if sum_size >= MAX_DNS_QUESTION_LEN {
                 return Err(DoHError::TooLarge);
@@ -623,12 +641,12 @@ impl DoH {
                 response_builder.header(hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
         }
         let response = response_builder
-            .body(Body::from(packet))
+            .body(Body::new(Bytes::from(packet)))
             .map_err(|_| DoHError::InvalidData)?;
         Ok(response)
     }
 
-    async fn client_serve<I>(self, stream: I, server: Http<LocalExecutor>)
+    async fn client_serve<I>(self, stream: I, server: Arc<HttpBuilder<LocalExecutor>>)
     where
         I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
     {
@@ -640,7 +658,7 @@ impl DoH {
         self.globals.runtime_handle.clone().spawn(async move {
             tokio::time::timeout(
                 self.globals.timeout + Duration::from_secs(1),
-                server.serve_connection(stream, self),
+                server.serve_connection(TokioIo::new(stream), self),
             )
             .await
             .ok();
@@ -651,7 +669,7 @@ impl DoH {
     async fn start_without_tls(
         self,
         listener: TcpListener,
-        server: Http<LocalExecutor>,
+        server: Arc<HttpBuilder<LocalExecutor>>,
     ) -> Result<(), DoHError> {
         let listener_service = async {
             while let Ok((stream, client_addr)) = listener.accept().await {
@@ -688,12 +706,14 @@ impl DoH {
             println!("Listening on http://{listen_address}{path}");
         }
 
-        let mut server = Http::new();
-        server.http1_keep_alive(self.globals.keepalive);
-        server.http2_max_concurrent_streams(self.globals.max_concurrent_streams);
-        server.pipeline_flush(true);
         let executor = LocalExecutor::new(self.globals.runtime_handle.clone());
-        let server = server.with_executor(executor);
+        let mut server = HttpBuilder::new(executor);
+        server.http1().keep_alive(self.globals.keepalive);
+        server
+            .http2()
+            .max_concurrent_streams(self.globals.max_concurrent_streams);
+        server.http1().pipeline_flush(true);
+        let server = Arc::new(server);
 
         #[cfg(feature = "tls")]
         {

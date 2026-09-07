@@ -1,17 +1,23 @@
 use std::fs::File;
-use std::io::{self, BufReader, Cursor, Read};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{future::FutureExt, join, select};
-use hyper::server::conn::Http;
+use hyper_util::server::conn::auto::Builder as HttpBuilder;
 use tokio::{
     net::TcpListener,
     sync::mpsc::{self, Receiver},
 };
 use tokio_rustls::{
-    rustls::{Certificate, PrivateKey, ServerConfig},
+    rustls::{
+        pki_types::{
+            pem::PemObject, CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer,
+        },
+        sign::{CertifiedKey, SingleCertAndKey},
+        ServerConfig,
+    },
     TlsAcceptor,
 };
 
@@ -24,7 +30,7 @@ where
     P: AsRef<Path>,
     P2: AsRef<Path>,
 {
-    let certs: Vec<_> = {
+    let certs: Vec<CertificateDer<'static>> = {
         let certs_path_str = certs_path.as_ref().display().to_string();
         let mut reader = BufReader::new(File::open(certs_path).map_err(|e| {
             io::Error::new(
@@ -32,17 +38,16 @@ where
                 format!("Unable to load the certificates [{certs_path_str}]: {e}"),
             )
         })?);
-        rustls_pemfile::certs(&mut reader).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Unable to parse the certificates",
-            )
-        })?
-    }
-    .drain(..)
-    .map(Certificate)
-    .collect();
-    let certs_keys: Vec<_> = {
+        CertificateDer::pem_reader_iter(&mut reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Unable to parse the certificates",
+                )
+            })?
+    };
+    let certs_keys: Vec<PrivateKeyDer<'static>> = {
         let certs_keys_path_str = certs_keys_path.as_ref().display().to_string();
         let encoded_keys = {
             let mut encoded_keys = vec![];
@@ -56,40 +61,50 @@ where
                 .read_to_end(&mut encoded_keys)?;
             encoded_keys
         };
-        let mut reader = Cursor::new(encoded_keys);
-        let pkcs8_keys = rustls_pemfile::pkcs8_private_keys(&mut reader).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Unable to parse the certificates private keys (PKCS8)",
-            )
-        })?;
-        reader.set_position(0);
-        let mut rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Unable to parse the certificates private keys (RSA)",
-            )
-        })?;
-        let mut keys = pkcs8_keys;
-        keys.append(&mut rsa_keys);
+        let pkcs8_keys = PrivatePkcs8KeyDer::pem_slice_iter(&encoded_keys)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Unable to parse the certificates private keys (PKCS8)",
+                )
+            })?;
+        let rsa_keys = PrivatePkcs1KeyDer::pem_slice_iter(&encoded_keys)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Unable to parse the certificates private keys (RSA)",
+                )
+            })?;
+        let keys: Vec<PrivateKeyDer<'static>> = pkcs8_keys
+            .into_iter()
+            .map(Into::into)
+            .chain(rsa_keys.into_iter().map(Into::into))
+            .collect();
         if keys.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "No private keys found - Make sure that they are in PKCS#8/PEM format",
             ));
         }
-        keys.drain(..).map(PrivateKey).collect()
+        keys
     };
 
     let mut server_config = certs_keys
         .into_iter()
         .find_map(|certs_key| {
-            let server_config_builder = ServerConfig::builder()
-                .with_safe_defaults()
-                .with_no_client_auth();
-            server_config_builder
-                .with_single_cert(certs.clone(), certs_key)
-                .ok()
+            let server_config_builder = ServerConfig::builder().with_no_client_auth();
+            let signing_key = server_config_builder
+                .crypto_provider()
+                .key_provider
+                .load_private_key(certs_key)
+                .ok()?;
+            let certified_key = CertifiedKey::new(certs.clone(), signing_key);
+            Some(
+                server_config_builder
+                    .with_cert_resolver(Arc::new(SingleCertAndKey::from(certified_key))),
+            )
         })
         .ok_or_else(|| {
             io::Error::new(
@@ -106,7 +121,7 @@ impl DoH {
         self,
         mut tls_acceptor_receiver: Receiver<TlsAcceptor>,
         listener: TcpListener,
-        server: Http<LocalExecutor>,
+        server: Arc<HttpBuilder<LocalExecutor>>,
     ) -> Result<(), DoHError> {
         let mut tls_acceptor: Option<TlsAcceptor> = None;
         let listener_service = async {
@@ -150,7 +165,7 @@ impl DoH {
     pub async fn start_with_tls(
         self,
         listener: TcpListener,
-        server: Http<LocalExecutor>,
+        server: Arc<HttpBuilder<LocalExecutor>>,
     ) -> Result<(), DoHError> {
         let certs_path = self
             .globals
