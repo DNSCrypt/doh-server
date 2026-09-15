@@ -31,12 +31,8 @@ hyper-util = { version = "0.1", default-features = false, features = [
     "server-auto",
     "tokio",
 ] }
-odoh-rs = "1"
+odoh-rs = "1.0.5"
 rand = "0.10"
-rand_core_compat = { version = "0.1", default-features = false, features = [
-    "rand_core_0_9",
-    "rand_core_0_10",
-] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = [
