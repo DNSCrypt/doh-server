@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+
+name=doh-server
+description="doh-server daemon"
+
+command=/usr/bin/doh-proxy
+command_args="$doh_server_args"
+command_user="$doh_server_user:$doh_server_group"
+capabilities="^cap_net_bind_service"
+
+command_background=yes
+pidfile="/run/$RC_SVCNAME.pid"
+error_logger="logger -t '${RC_SVCNAME}' -p daemon.info"
+
+depend() {
+	use dns logger
+	need localmount net
+	after firewall
+}
