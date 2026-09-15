@@ -1,0 +1,3 @@
+doh_server_user="doh-server"
+doh_server_group="doh-server"
+doh_server_args="--server-address 127.0.0.1:53 --listen-address 0.0.0.0:80"
