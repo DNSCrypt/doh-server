@@ -334,9 +334,10 @@ pub fn build_dns_query(query: &DnsJsonQuery) -> Result<Vec<u8>, Error> {
     packet[0] = rand::random();
     packet[1] = rand::random();
 
-    // Flags: RD (recursion desired) set by default
+    // Request authenticated status even when DNSSEC records aren't requested.
+    // People apparently expect that because this is what Cloudflare does.
     packet[2] = 0x01;
-    packet[3] = 0x00;
+    packet[3] = 0x20;
 
     // Set CD flag if requested
     if query.cd.unwrap_or(false) {
@@ -409,3 +410,69 @@ pub fn build_dns_query(query: &DnsJsonQuery) -> Result<Vec<u8>, Error> {
 // Export base64 for reuse
 use base64::Engine;
 pub const BASE64_STD: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_queries_request_authenticated_status_independently_of_do_and_cd() {
+        for do_ in [None, Some(false), Some(true)] {
+            for cd in [None, Some(false), Some(true)] {
+                let query = DnsJsonQuery {
+                    name: "example.com".into(),
+                    qtype: Some(TYPE_A),
+                    cd,
+                    ct: None,
+                    do_,
+                    edns_client_subnet: None,
+                };
+                let packet = build_dns_query(&query).unwrap();
+                let flags = BigEndian::read_u16(&packet[2..4]);
+                assert_eq!(flags & 0x0120, 0x0120, "DO={do_:?}, CD={cd:?}");
+                assert_eq!(flags & 0x0010 != 0, cd.unwrap_or(false));
+
+                let (_, name_end) = parse_name(&packet, 12).unwrap();
+                let question_end = name_end + 4;
+                if do_ == Some(true) {
+                    assert_eq!(dns::arcount(&packet), 1);
+                    assert_eq!(packet[question_end], 0);
+                    assert_eq!(
+                        BigEndian::read_u16(&packet[question_end + 1..question_end + 3]),
+                        dns::DNS_TYPE_OPT
+                    );
+                    assert_eq!(
+                        BigEndian::read_u32(&packet[question_end + 5..question_end + 9]),
+                        0x8000
+                    );
+                } else {
+                    assert_eq!(dns::arcount(&packet), 0);
+                    assert_eq!(packet.len(), question_end);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn json_response_preserves_upstream_ad_and_cd() {
+        for ad in [false, true] {
+            for cd in [false, true] {
+                let flags = 0x8180 | if ad { 0x20 } else { 0 } | if cd { 0x10 } else { 0 };
+                let mut packet = vec![0; 12];
+                BigEndian::write_u16(&mut packet[2..4], flags);
+                BigEndian::write_u16(&mut packet[4..6], 1);
+                BigEndian::write_u16(&mut packet[6..8], 1);
+                packet.extend_from_slice(b"\x07example\x03com\x00\x00\x01\x00\x01");
+                packet.extend_from_slice(
+                    b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04\xc0\x00\x02\x01",
+                );
+
+                let response = parse_dns_to_json(&packet).unwrap();
+                let json = serde_json::to_value(response).unwrap();
+                assert_eq!(json["AD"], ad);
+                assert_eq!(json["CD"], cd);
+                assert_eq!(json["Answer"][0]["data"], "192.0.2.1");
+            }
+        }
+    }
+}
