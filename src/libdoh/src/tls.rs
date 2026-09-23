@@ -1,14 +1,16 @@
 use std::fs::File;
 use std::io::{self, BufReader, Read};
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{future::FutureExt, join, select};
-use hyper_util::server::conn::auto::Builder as HttpBuilder;
+use futures::join;
 use tokio::{
+    io::{AsyncRead, AsyncWrite},
     net::TcpListener,
-    sync::mpsc::{self, Receiver},
+    sync::watch,
+    time::Instant,
 };
 use tokio_rustls::{
     rustls::{
@@ -21,9 +23,11 @@ use tokio_rustls::{
     TlsAcceptor,
 };
 
+use crate::accept::Acceptor;
+use crate::admission::Slot;
 use crate::constants::CERTS_WATCH_DELAY_SECS;
 use crate::errors::*;
-use crate::{DoH, LocalExecutor};
+use crate::{lifecycle, Server};
 
 pub fn create_tls_acceptor<P, P2>(certs_path: P, certs_keys_path: P2) -> io::Result<TlsAcceptor>
 where
@@ -116,59 +120,57 @@ where
     Ok(TlsAcceptor::from(Arc::new(server_config)))
 }
 
-impl DoH {
-    async fn start_https_service(
-        self,
-        mut tls_acceptor_receiver: Receiver<TlsAcceptor>,
+impl Server {
+    /// Connections accepted before the first certificate has been loaded are closed.
+    async fn accept_tls_connections(
+        self: Arc<Self>,
         listener: TcpListener,
-        server: Arc<HttpBuilder<LocalExecutor>>,
-    ) -> Result<(), DoHError> {
-        let mut tls_acceptor: Option<TlsAcceptor> = None;
-        let listener_service = async {
-            loop {
-                select! {
-                    tcp_cnx = listener.accept().fuse() => {
-                        if tls_acceptor.is_none() || tcp_cnx.is_err() {
-                            continue;
-                        }
-                        let (raw_stream, client_addr) = tcp_cnx.unwrap();
-                        let tls_acceptor = tls_acceptor.as_ref().unwrap().clone();
-                        let mut doh = self.clone();
-                        let server = server.clone();
-                        self.globals.runtime_handle.clone().spawn(async move {
-                            if let Ok(Ok(stream)) = tokio::time::timeout(
-                                doh.globals.timeout + Duration::from_secs(1),
-                                tls_acceptor.accept(raw_stream),
-                            )
-                            .await
-                            {
-                                doh.remote_addr = Some(client_addr);
-                                doh.client_serve(stream, server).await
-                            }
-                        });
-                    }
-                    new_tls_acceptor = tls_acceptor_receiver.recv().fuse() => {
-                        if new_tls_acceptor.is_none() {
-                            break;
-                        }
-                        tls_acceptor = new_tls_acceptor;
-                    }
-                    complete => break
-                }
-            }
-            Ok(()) as Result<(), DoHError>
-        };
-        listener_service.await?;
-        Ok(())
+        tls_acceptor_receiver: watch::Receiver<Option<TlsAcceptor>>,
+    ) {
+        let mut acceptor = Acceptor::default();
+        loop {
+            let (raw_stream, remote_addr) = acceptor.accept(&listener).await;
+            let Some(tls_acceptor) = tls_acceptor_receiver.borrow().clone() else {
+                continue;
+            };
+            let Some(slot) = self.admission.try_admit() else {
+                continue;
+            };
+            self.spawn(Arc::clone(&self).serve_tls_connection(
+                tls_acceptor,
+                raw_stream,
+                remote_addr,
+                slot,
+            ));
+        }
     }
 
-    pub async fn start_with_tls(
-        self,
+    pub(crate) async fn serve_tls_connection<I>(
+        self: Arc<Self>,
+        tls_acceptor: TlsAcceptor,
+        raw_stream: I,
+        remote_addr: SocketAddr,
+        slot: Slot,
+    ) where
+        I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    {
+        let handshake = tls_acceptor.accept(raw_stream);
+        // The handshake keeps its own reference to the configuration.
+        // Holding this one too would keep every reloaded configuration in memory
+        // until the connections that used it are closed.
+        drop(tls_acceptor);
+        if let Some(Ok(stream)) = lifecycle::handshake(handshake, &self.policy, &slot).await {
+            self.serve_connection(stream, remote_addr, slot, Instant::now())
+                .await
+        }
+    }
+
+    pub(crate) async fn run_with_tls(
+        self: Arc<Self>,
         listener: TcpListener,
-        server: Arc<HttpBuilder<LocalExecutor>>,
     ) -> Result<(), DoHError> {
-        let certs_path = self
-            .globals
+        let globals = &self.doh.globals;
+        let certs_path = globals
             .tls_cert_path
             .as_ref()
             .ok_or_else(|| {
@@ -178,8 +180,7 @@ impl DoH {
                 ))
             })?
             .clone();
-        let certs_keys_path = self
-            .globals
+        let certs_keys_path = globals
             .tls_cert_key_path
             .as_ref()
             .ok_or_else(|| {
@@ -189,22 +190,21 @@ impl DoH {
                 ))
             })?
             .clone();
-        let (tls_acceptor_sender, tls_acceptor_receiver) = mpsc::channel(1);
-        let https_service = self.start_https_service(tls_acceptor_receiver, listener, server);
+        let (tls_acceptor_sender, tls_acceptor_receiver) = watch::channel(None);
+        let https_service =
+            Arc::clone(&self).accept_tls_connections(listener, tls_acceptor_receiver);
         let cert_service = async {
             loop {
                 match create_tls_acceptor(&certs_path, &certs_keys_path) {
                     Ok(tls_acceptor) => {
-                        if tls_acceptor_sender.send(tls_acceptor).await.is_err() {
-                            break;
-                        }
+                        tls_acceptor_sender.send_replace(Some(tls_acceptor));
                     }
                     Err(e) => eprintln!("TLS certificates error: {e}"),
                 }
                 tokio::time::sleep(Duration::from_secs(CERTS_WATCH_DELAY_SECS.into())).await;
             }
-            Ok::<_, DoHError>(())
         };
-        join!(https_service, cert_service).0
+        join!(https_service, cert_service);
+        Ok(())
     }
 }

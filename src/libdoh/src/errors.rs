@@ -9,11 +9,12 @@ pub enum DoHError {
     TooLarge,
     UpstreamIssue,
     UpstreamTimeout,
+    BodyTimeout,
     StaleKey,
     Hyper(hyper::Error),
     Io(io::Error),
     ODoHConfigError(anyhow::Error),
-    TooManyTcpSessions,
+    InvalidConfig(String),
 }
 
 impl std::error::Error for DoHError {}
@@ -26,11 +27,12 @@ impl std::fmt::Display for DoHError {
             DoHError::TooLarge => write!(fmt, "Too large"),
             DoHError::UpstreamIssue => write!(fmt, "Upstream error"),
             DoHError::UpstreamTimeout => write!(fmt, "Upstream timeout"),
+            DoHError::BodyTimeout => write!(fmt, "Request body timeout"),
             DoHError::StaleKey => write!(fmt, "Stale key material"),
             DoHError::Hyper(e) => write!(fmt, "HTTP error: {e}"),
             DoHError::Io(e) => write!(fmt, "IO error: {e}"),
             DoHError::ODoHConfigError(e) => write!(fmt, "ODoH config error: {e}"),
-            DoHError::TooManyTcpSessions => write!(fmt, "Too many TCP sessions"),
+            DoHError::InvalidConfig(e) => write!(fmt, "Invalid configuration: {e}"),
         }
     }
 }
@@ -43,11 +45,12 @@ impl From<DoHError> for StatusCode {
             DoHError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             DoHError::UpstreamIssue => StatusCode::BAD_GATEWAY,
             DoHError::UpstreamTimeout => StatusCode::BAD_GATEWAY,
+            DoHError::BodyTimeout => StatusCode::REQUEST_TIMEOUT,
             DoHError::StaleKey => StatusCode::UNAUTHORIZED,
             DoHError::Hyper(_) => StatusCode::SERVICE_UNAVAILABLE,
             DoHError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
             DoHError::ODoHConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            DoHError::TooManyTcpSessions => StatusCode::SERVICE_UNAVAILABLE,
+            DoHError::InvalidConfig(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

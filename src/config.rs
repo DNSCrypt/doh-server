@@ -13,8 +13,8 @@ fn exit_with_error(msg: &str) -> ! {
     std::process::exit(1);
 }
 
-pub fn parse_opts(globals: &mut Globals) {
-    use crate::utils::{verify_remote_server, verify_sock_addr};
+fn options() -> clap::Command {
+    use crate::utils::{verify_max_clients, verify_remote_server, verify_sock_addr};
 
     let max_clients = MAX_CLIENTS.to_string();
     let timeout_sec = TIMEOUT_SEC.to_string();
@@ -87,7 +87,8 @@ pub fn parse_opts(globals: &mut Globals) {
                 .long("max-clients")
                 .num_args(1)
                 .default_value(max_clients)
-                .help("Maximum number of simultaneous clients"),
+                .value_parser(verify_max_clients)
+                .help("Maximum number of simultaneous client connections, TLS handshakes included"),
         )
         .arg(
             Arg::new("max_concurrent")
@@ -103,7 +104,12 @@ pub fn parse_opts(globals: &mut Globals) {
                 .long("timeout")
                 .num_args(1)
                 .default_value(timeout_sec)
-                .help("Timeout, in seconds"),
+                .value_parser(clap::value_parser!(u64).range(MIN_TIMEOUT_SECS..=MAX_TIMEOUT_SECS))
+                .help(format!(
+                    "Time budget of a request, in seconds ({MIN_TIMEOUT_SECS} to \
+                     {MAX_TIMEOUT_SECS}). Idle connections are closed after this delay, sooner \
+                     when the server is busy"
+                )),
         )
         .arg(
             Arg::new("min_ttl")
@@ -190,7 +196,11 @@ pub fn parse_opts(globals: &mut Globals) {
                 .help("Path to the PEM-encoded secret keys (only required for built-in TLS)"),
         );
 
-    let matches = options.get_matches();
+    options
+}
+
+pub fn parse_opts(globals: &mut Globals) {
+    let matches = options().get_matches();
 
     // Parse listen address
     globals.listen_address = matches
@@ -244,22 +254,15 @@ pub fn parse_opts(globals: &mut Globals) {
         globals.path = format!("/{}", globals.path);
     }
 
-    // Parse max_clients
-    let max_clients_str = matches
-        .get_one::<String>("max_clients")
+    globals.max_clients = *matches
+        .get_one::<usize>("max_clients")
         .expect("max_clients has a default value");
-    globals.max_clients = max_clients_str.parse().unwrap_or_else(|e| {
-        exit_with_error(&format!("Invalid max clients '{}': {}", max_clients_str, e))
-    });
 
-    // Parse timeout
-    let timeout_str = matches
-        .get_one::<String>("timeout")
-        .expect("timeout has a default value");
-    let timeout_secs: u64 = timeout_str
-        .parse()
-        .unwrap_or_else(|e| exit_with_error(&format!("Invalid timeout '{}': {}", timeout_str, e)));
-    globals.timeout = Duration::from_secs(timeout_secs);
+    globals.timeout = Duration::from_secs(
+        *matches
+            .get_one::<u64>("timeout")
+            .expect("timeout has a default value"),
+    );
 
     // Parse max_concurrent_streams
     let max_concurrent_str = matches
@@ -421,5 +424,54 @@ pub fn parse_opts(globals: &mut Globals) {
              test DNS stamps for your server.\n"
         );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<clap::ArgMatches, clap::Error> {
+        options().try_get_matches_from(std::iter::once("doh-proxy").chain(args.iter().copied()))
+    }
+
+    #[test]
+    fn timeout_range() {
+        for accepted in ["1", "3600"] {
+            let matches = parse(&["--timeout", accepted]).unwrap();
+            assert_eq!(
+                matches.get_one::<u64>("timeout").unwrap().to_string(),
+                accepted
+            );
+        }
+        let largest = u64::MAX.to_string();
+        let too_large_to_parse = format!("{}0", u64::MAX);
+        for rejected in ["0", "3601", &largest, &too_large_to_parse, "-1", "10s"] {
+            let err = parse(&[&format!("--timeout={rejected}")]).unwrap_err();
+            assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+        }
+    }
+
+    #[test]
+    fn default_timeout_is_in_range() {
+        let matches = parse(&[]).unwrap();
+        let timeout = *matches.get_one::<u64>("timeout").unwrap();
+        assert_eq!(timeout, TIMEOUT_SEC);
+        assert!((MIN_TIMEOUT_SECS..=MAX_TIMEOUT_SECS).contains(&timeout));
+    }
+
+    #[test]
+    fn max_clients_must_be_positive() {
+        for rejected in ["0", "-1", "many", "18446744073709551616"] {
+            let err = parse(&[&format!("--max-clients={rejected}")]).unwrap_err();
+            assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+        }
+        let matches = parse(&["--max-clients", "1"]).unwrap();
+        assert_eq!(*matches.get_one::<usize>("max_clients").unwrap(), 1);
+        let matches = parse(&[]).unwrap();
+        assert_eq!(
+            *matches.get_one::<usize>("max_clients").unwrap(),
+            MAX_CLIENTS
+        );
     }
 }

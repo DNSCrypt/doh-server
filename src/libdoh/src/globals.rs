@@ -1,13 +1,16 @@
 use std::net::SocketAddr;
 #[cfg(feature = "tls")]
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::runtime;
 
+use crate::errors::DoHError;
 use crate::odoh::ODoHRotator;
+
+pub const MIN_TIMEOUT_SECS: u64 = 1;
+pub const MAX_TIMEOUT_SECS: u64 = 3600;
 
 #[derive(Debug)]
 pub struct Globals {
@@ -23,7 +26,6 @@ pub struct Globals {
     pub path: String,
     pub max_clients: usize,
     pub timeout: Duration,
-    pub clients_count: ClientsCount,
     pub max_concurrent_streams: u32,
     pub min_ttl: u32,
     pub max_ttl: u32,
@@ -40,28 +42,24 @@ pub struct Globals {
     pub runtime_handle: runtime::Handle,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ClientsCount(Arc<AtomicUsize>);
-
-impl ClientsCount {
-    pub fn current(&self) -> usize {
-        self.0.load(Ordering::Relaxed)
-    }
-
-    pub fn increment(&self) -> usize {
-        self.0.fetch_add(1, Ordering::Relaxed)
-    }
-
-    pub fn decrement(&self) -> usize {
-        let mut count;
-        while {
-            count = self.0.load(Ordering::Relaxed);
-            count > 0
-                && self
-                    .0
-                    .compare_exchange(count, count - 1, Ordering::Relaxed, Ordering::Relaxed)
-                    != Ok(count)
-        } {}
-        count
+impl Globals {
+    /// Checks the settings that connection and request deadlines are derived from.
+    ///
+    /// `DoH::entrypoint()` calls this before binding the listener, because the
+    /// fields are public and can be set without going through the command line.
+    pub fn validate(&self) -> Result<(), DoHError> {
+        let timeout_range =
+            Duration::from_secs(MIN_TIMEOUT_SECS)..=Duration::from_secs(MAX_TIMEOUT_SECS);
+        if !timeout_range.contains(&self.timeout) {
+            return Err(DoHError::InvalidConfig(format!(
+                "the timeout must be between {MIN_TIMEOUT_SECS} and {MAX_TIMEOUT_SECS} seconds"
+            )));
+        }
+        if self.max_clients == 0 {
+            return Err(DoHError::InvalidConfig(
+                "the maximum number of clients must be at least 1".to_string(),
+            ));
+        }
+        Ok(())
     }
 }

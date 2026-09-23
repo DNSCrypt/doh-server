@@ -39,6 +39,7 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
     - [Privacy Considerations](#privacy-considerations)
   - [Oblivious DoH (ODoH)](#oblivious-doh-odoh)
   - [Operational recommendations](#operational-recommendations)
+  - [Timeouts and connection limits](#timeouts-and-connection-limits)
   - [DNS Stamps and Certificate Hashes](#dns-stamps-and-certificate-hashes)
   - [Why Certificate Hashes in DoH Stamps Matter](#why-certificate-hashes-in-doh-stamps-matter)
     - [Background](#background)
@@ -121,7 +122,7 @@ OPTIONS:
     -H, --hostname <hostname>                        Host name (not IP address) DoH clients will use to connect
     -l, --listen-address <listen_address>            Address to listen to [default: 127.0.0.1:3000]
     -b, --local-bind-address <local_bind_address>    Address to connect from
-    -c, --max-clients <max_clients>                  Maximum number of simultaneous clients [default: 512]
+    -c, --max-clients <max_clients>                  Maximum number of simultaneous client connections, TLS handshakes included [default: 512]
     -C, --max-concurrent <max_concurrent>            Maximum number of concurrent requests per client [default: 16]
     -X, --max-ttl <max_ttl>                          Maximum TTL, in seconds [default: 604800]
     -T, --min-ttl <min_ttl>                          Minimum TTL, in seconds [default: 10]
@@ -129,7 +130,7 @@ OPTIONS:
     -g, --public-address <public_address>            External IP address(es) DoH clients will connect to (can be specified multiple times)
     -j, --public-port <public_port>                  External port DoH clients will connect to, if not 443
     -u, --server-address <server_address>            Address to connect to [default: 9.9.9.9:53]
-    -t, --timeout <timeout>                          Timeout, in seconds [default: 10]
+    -t, --timeout <timeout>                          Time budget of a request, in seconds (1 to 3600). Idle connections are closed after this delay, sooner when the server is busy [default: 10]
     -I, --tls-cert-key-path <tls_cert_key_path>
             Path to the PEM-encoded secret keys (only required for built-in TLS)
 
@@ -273,6 +274,32 @@ location /dns-query {
     proxy_set_header Connection "";
 }
 ```
+
+The example above opens a fresh backend connection for each request.
+To enable connection reuse, use an `upstream` block with `keepalive`:
+
+```nginx
+upstream doh_backend {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
+location /dns-query {
+    proxy_pass http://doh_backend;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_next_upstream error timeout non_idempotent;
+}
+```
+
+`doh-proxy` closes connections that stay idle, like most servers.
+If nginx reuses a connection just as it closes, that request attempt can fail.
+nginx retries GET requests by default, and [`proxy_next_upstream ... non_idempotent`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_next_upstream) allows it to retry POST queries as well.
+DoH and ODoH queries can safely be repeated.
+Retries are only possible before nginx starts sending the response to the client.
+
+Setting `keepalive_timeout 5s;` in the upstream block can reduce these retries at normal load with the default `--timeout 10`, but is optional.
+Under connection pressure, `doh-proxy` may close idle connections sooner, so a shorter nginx timeout does not replace retries.
 
 ### With HAProxy
 
@@ -430,6 +457,56 @@ This can be achieved with the `--allow-odoh-post` command-line switch.
 * TLS certificates are tied to host names. But domains expire, get reassigned and switch hands all the time. If a domain originally used for a DoH service gets a new, possibly malicious owner, clients still configured to use the service will blindly keep trusting it if the CA is the same. As a mitigation, the CA should sign an intermediate certificate (the only one present in the stamp), itself used to sign the name used by the DoH server. While commercial CAs offer this, Let's Encrypt currently doesn't.
 * Make sure that the front-end supports at least HTTP/2 and TLS 1.3.
 * Internal DoH servers still require TLS certificates. So, if you are planning to deploy an internal server, you need to set up an internal CA, or add self-signed certificates to every single client.
+
+## Timeouts and connection limits
+
+`--timeout` (10 seconds by default, between 1 and 3600) is the time budget of a single request.
+It starts once the request headers have been received, and covers reading the request body, waiting for the upstream resolver, and retrying over TCP when a UDP response was truncated.
+A body that doesn't arrive in time gets a `408` response, and a resolver that doesn't answer in time gets a `502`.
+
+The same value controls how long connections are kept, so there is nothing else to tune:
+
+- A connection with no request in progress is closed once it has been idle for the timeout.
+  This includes connections that never send anything, and incomplete HTTP/1 request headers.
+- When the number of connections gets close to `--max-clients`, idle connections are closed sooner: after half the timeout from 70% of the limit, and after a tenth of it (never less than a second) from 90%.
+  The delays go back up once the number of connections falls below 80%, and then below 60% of the limit.
+  Requests in progress are never cut short because of this.
+- TLS handshakes have to complete within the same delays, counted from the moment the connection was accepted, but they always get at least two seconds.
+  Once the handshake is done, the idle delay starts over, so the time spent on the handshake is not taken away from the first request.
+- Every connection is retired once it is 6 times the timeout old, or 60 seconds if that is longer.
+  HTTP/1 connections finish the response in progress and close with `Connection: close`.
+  HTTP/2 connections send a `GOAWAY` frame and complete the streams they had already accepted.
+  Clients simply open a new connection.
+- A retiring connection has twice the timeout to finish its work.
+  After that, it is closed even if a response is still waiting to be delivered, for example to a client that stopped reading.
+
+With the default timeout, this gives:
+
+```text
++------------------------------------------------+------------+
+| Event                                          | Default    |
++------------------------------------------------+------------+
+| Request budget                                 | 10 s       |
+| Idle connection closed after                   | 10 s       |
+|   from 70% / 90% of the connection limit       | 5 s / 1 s  |
+| TLS handshake limit                            | 10 s       |
+|   from 70% / 90% of the connection limit       | 5 s / 2 s  |
+| Connection retired at the age of               | 60 s       |
+| Retiring connection closed at the latest after | 20 s       |
++------------------------------------------------+------------+
+```
+
+`--max-clients` counts connections from the moment they are accepted, TLS handshakes included.
+Connections above the limit are closed right away, before any TLS work.
+
+A proxy that reuses connections to `doh-proxy` should retry requests that fail because an idle connection was closed at the same moment.
+
+Truncated UDP responses are retried over TCP.
+The number of simultaneous TCP connections to the upstream resolver is limited separately, to one for every 8 allowed clients (and at least one).
+A query that needs one waits for a free connection, within its own time budget.
+
+These limits bound how long the server holds on to its resources, but they are a safety net, not a guarantee.
+Under heavy overload, or with an upstream resolver that stops answering, some queries will still fail.
 
 ## DNS Stamps and Certificate Hashes
 

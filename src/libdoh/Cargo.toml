@@ -50,6 +50,10 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
     "tls12",
 ], optional = true }
 
+[dev-dependencies]
+h2 = "0.4"
+tokio = { version = "1", features = ["test-util"] }
+
 [profile.release]
 codegen-units = 1
 incremental = false

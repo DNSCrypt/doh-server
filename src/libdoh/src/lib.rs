@@ -1,17 +1,21 @@
+mod accept;
+mod admission;
 mod constants;
 pub mod dns;
 mod dns_json;
 mod edns_ecs;
 mod errors;
 mod globals;
+mod lifecycle;
 pub mod odoh;
+#[cfg(test)]
+mod tests;
 #[cfg(feature = "tls")]
 mod tls;
 
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
 use base64::engine::Engine;
 use byteorder::{BigEndian, ByteOrder};
@@ -20,15 +24,20 @@ use futures::prelude::*;
 use http_body_util::{BodyExt, Full};
 use hyper::http;
 use hyper::{body::Incoming as IncomingBody, HeaderMap, Method, Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder as HttpBuilder;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, UdpSocket};
 use tokio::runtime;
+use tokio::sync::Semaphore;
+use tokio::time::Instant;
 
+use crate::accept::Acceptor;
+use crate::admission::{Admission, Slot};
 use crate::constants::*;
 pub use crate::errors::*;
 pub use crate::globals::*;
+use crate::lifecycle::{Activity, Policy};
 
 pub mod reexports {
     pub use tokio;
@@ -114,38 +123,83 @@ where
     }
 }
 
+/// The HTTP service of a single downstream connection.
+struct ConnectionService {
+    server: Arc<Server>,
+    doh: DoH,
+    activity: Arc<Activity>,
+}
+
 #[allow(clippy::type_complexity)]
-impl hyper::service::Service<http::Request<IncomingBody>> for DoH {
+impl hyper::service::Service<http::Request<IncomingBody>> for ConnectionService {
     type Error = http::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
     type Response = Response<Body>;
 
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
-        let globals = &self.globals;
-        let self_inner = self.clone();
-        if req.uri().path() == globals.path {
-            match *req.method() {
-                Method::POST => Box::pin(async move { self_inner.serve_post(req).await }),
-                Method::GET => Box::pin(async move { self_inner.serve_get(req).await }),
-                _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
-            }
-        } else if req.uri().path() == globals.odoh_configs_path {
-            match *req.method() {
-                Method::GET => Box::pin(async move { self_inner.serve_odoh_configs().await }),
-                _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
-            }
-        } else {
-            Box::pin(async { http_error(StatusCode::NOT_FOUND) })
-        }
+        let activity = self.activity.enter();
+        let deadline = Instant::now() + self.server.policy.request;
+        let server = Arc::clone(&self.server);
+        let doh = self.doh.clone();
+        Box::pin(async move {
+            let _activity = activity;
+            let ctx = RequestContext {
+                deadline,
+                upstream_tcp: &server.upstream_tcp,
+            };
+            doh.serve(req, &ctx).await
+        })
     }
 }
 
+/// Limits shared by every step of a request.
+struct RequestContext<'a> {
+    /// Receiving the body and resolving the query must both be done by then.
+    deadline: Instant,
+    upstream_tcp: &'a Semaphore,
+}
+
 impl DoH {
-    async fn serve_get(&self, req: Request<IncomingBody>) -> Result<Response<Body>, http::Error> {
+    async fn serve(
+        &self,
+        req: Request<IncomingBody>,
+        ctx: &RequestContext<'_>,
+    ) -> Result<Response<Body>, http::Error> {
+        let globals = &self.globals;
+        let version = req.version();
+        let mut response = if req.uri().path() == globals.path {
+            match *req.method() {
+                Method::POST => self.serve_post(req, ctx).await,
+                Method::GET => self.serve_get(req, ctx).await,
+                _ => http_error(StatusCode::METHOD_NOT_ALLOWED),
+            }
+        } else if req.uri().path() == globals.odoh_configs_path {
+            match *req.method() {
+                Method::GET => self.serve_odoh_configs().await,
+                _ => http_error(StatusCode::METHOD_NOT_ALLOWED),
+            }
+        } else {
+            http_error(StatusCode::NOT_FOUND)
+        }?;
+        // The rest of the body may still be in flight, so the connection can't be reused.
+        if response.status() == StatusCode::REQUEST_TIMEOUT && version < http::Version::HTTP_2 {
+            response.headers_mut().insert(
+                hyper::header::CONNECTION,
+                hyper::header::HeaderValue::from_static("close"),
+            );
+        }
+        Ok(response)
+    }
+
+    async fn serve_get(
+        &self,
+        req: Request<IncomingBody>,
+        ctx: &RequestContext<'_>,
+    ) -> Result<Response<Body>, http::Error> {
         let mut response = match Self::parse_content_type(&req) {
-            Ok(DoHType::Standard) => self.serve_doh_get(req).await,
-            Ok(DoHType::Oblivious) => self.serve_odoh_get(req).await,
-            Ok(DoHType::Json) => self.serve_json_get(req).await,
+            Ok(DoHType::Standard) => self.serve_doh_get(req, ctx).await,
+            Ok(DoHType::Oblivious) => self.serve_odoh_get(req, ctx).await,
+            Ok(DoHType::Json) => self.serve_json_get(req, ctx).await,
             Err(response) => Ok(*response),
         }?;
         response.headers_mut().insert(
@@ -155,10 +209,14 @@ impl DoH {
         Ok(response)
     }
 
-    async fn serve_post(&self, req: Request<IncomingBody>) -> Result<Response<Body>, http::Error> {
+    async fn serve_post(
+        &self,
+        req: Request<IncomingBody>,
+        ctx: &RequestContext<'_>,
+    ) -> Result<Response<Body>, http::Error> {
         match Self::parse_content_type(&req) {
-            Ok(DoHType::Standard) => self.serve_doh_post(req).await,
-            Ok(DoHType::Oblivious) => self.serve_odoh_post(req).await,
+            Ok(DoHType::Standard) => self.serve_doh_post(req, ctx).await,
+            Ok(DoHType::Oblivious) => self.serve_odoh_post(req, ctx).await,
             Ok(DoHType::Json) => http_error(StatusCode::METHOD_NOT_ALLOWED),
             Err(response) => Ok(*response),
         }
@@ -168,8 +226,9 @@ impl DoH {
         &self,
         query: Vec<u8>,
         client_ip: Option<IpAddr>,
+        ctx: &RequestContext<'_>,
     ) -> Result<Response<Body>, http::Error> {
-        let resp = match self.proxy(query, client_ip).await {
+        let resp = match self.proxy(query, client_ip, ctx).await {
             Ok(resp) => {
                 self.build_response(resp.packet, resp.ttl, DoHType::Standard.as_str(), true)
             }
@@ -209,6 +268,7 @@ impl DoH {
     async fn serve_doh_get(
         &self,
         req: Request<IncomingBody>,
+        ctx: &RequestContext<'_>,
     ) -> Result<Response<Body>, http::Error> {
         let client_ip = if self.globals.enable_ecs {
             edns_ecs::extract_client_ip(req.headers(), self.remote_addr)
@@ -220,12 +280,13 @@ impl DoH {
             Some(query) => query,
             _ => return http_error_with_cache(StatusCode::BAD_REQUEST),
         };
-        self.serve_doh_query(query, client_ip).await
+        self.serve_doh_query(query, client_ip, ctx).await
     }
 
     async fn serve_doh_post(
         &self,
         req: Request<IncomingBody>,
+        ctx: &RequestContext<'_>,
     ) -> Result<Response<Body>, http::Error> {
         if self.globals.disable_post {
             return http_error(StatusCode::METHOD_NOT_ALLOWED);
@@ -237,20 +298,24 @@ impl DoH {
             None
         };
 
-        let query = match self.read_body(req.into_body()).await {
+        let query = match self.read_body(req.into_body(), ctx).await {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
         };
-        self.serve_doh_query(query, client_ip).await
+        self.serve_doh_query(query, client_ip, ctx).await
     }
 
-    async fn serve_odoh(&self, encrypted_query: Vec<u8>) -> Result<Response<Body>, http::Error> {
+    async fn serve_odoh(
+        &self,
+        encrypted_query: Vec<u8>,
+        ctx: &RequestContext<'_>,
+    ) -> Result<Response<Body>, http::Error> {
         let odoh_public_key = (*self.globals.odoh_rotator).clone().current_public_key();
         let (query, context) = match (*odoh_public_key).clone().decrypt_query(encrypted_query) {
             Ok((q, context)) => (q.to_vec(), context),
             Err(e) => return http_error(StatusCode::from(e)),
         };
-        let resp = match self.proxy(query, None).await {
+        let resp = match self.proxy(query, None, ctx).await {
             Ok(resp) => resp,
             Err(e) => return http_error(StatusCode::from(e)),
         };
@@ -268,26 +333,28 @@ impl DoH {
     async fn serve_odoh_get(
         &self,
         req: Request<IncomingBody>,
+        ctx: &RequestContext<'_>,
     ) -> Result<Response<Body>, http::Error> {
         let encrypted_query = match self.query_from_query_string(req) {
             Some(encrypted_query) => encrypted_query,
             _ => return http_error_with_cache(StatusCode::BAD_REQUEST),
         };
-        self.serve_odoh(encrypted_query).await
+        self.serve_odoh(encrypted_query, ctx).await
     }
 
     async fn serve_odoh_post(
         &self,
         req: Request<IncomingBody>,
+        ctx: &RequestContext<'_>,
     ) -> Result<Response<Body>, http::Error> {
         if self.globals.disable_post && !self.globals.allow_odoh_post {
             return http_error(StatusCode::METHOD_NOT_ALLOWED);
         }
-        let encrypted_query = match self.read_body(req.into_body()).await {
+        let encrypted_query = match self.read_body(req.into_body(), ctx).await {
             Ok(q) => q,
             Err(e) => return http_error(StatusCode::from(e)),
         };
-        self.serve_odoh(encrypted_query).await
+        self.serve_odoh(encrypted_query, ctx).await
     }
 
     async fn serve_odoh_configs(&self) -> Result<Response<Body>, http::Error> {
@@ -307,6 +374,7 @@ impl DoH {
     async fn serve_json_get(
         &self,
         req: Request<IncomingBody>,
+        ctx: &RequestContext<'_>,
     ) -> Result<Response<Body>, http::Error> {
         use serde_json::json;
 
@@ -376,7 +444,7 @@ impl DoH {
         };
 
         // Send query and get response
-        let dns_response = match self.proxy(query_packet, client_ip).await {
+        let dns_response = match self.proxy(query_packet, client_ip, ctx).await {
             Ok(resp) => resp,
             Err(e) => return http_error(StatusCode::from(e)),
         };
@@ -493,30 +561,40 @@ impl DoH {
         }
     }
 
-    async fn read_body(&self, mut body: IncomingBody) -> Result<Vec<u8>, DoHError> {
-        let mut sum_size = 0;
-        let mut query = vec![];
-        while let Some(frame) = body.frame().await {
-            let frame = frame.map_err(|_| DoHError::TooLarge)?;
-            let Some(chunk) = frame.data_ref() else {
-                continue;
-            };
-            sum_size += chunk.len();
-            if sum_size >= MAX_DNS_QUESTION_LEN {
-                return Err(DoHError::TooLarge);
+    async fn read_body(
+        &self,
+        mut body: IncomingBody,
+        ctx: &RequestContext<'_>,
+    ) -> Result<Vec<u8>, DoHError> {
+        let collect = async {
+            let mut sum_size = 0;
+            let mut query = vec![];
+            while let Some(frame) = body.frame().await {
+                let frame = frame.map_err(|_| DoHError::TooLarge)?;
+                let Some(chunk) = frame.data_ref() else {
+                    continue;
+                };
+                sum_size += chunk.len();
+                if sum_size >= MAX_DNS_QUESTION_LEN {
+                    return Err(DoHError::TooLarge);
+                }
+                query.extend(chunk);
             }
-            query.extend(chunk);
-        }
-        Ok(query)
+            Ok(query)
+        };
+        tokio::time::timeout_at(ctx.deadline, collect)
+            .await
+            .map_err(|_| DoHError::BodyTimeout)?
     }
 
     async fn proxy(
         &self,
         query: Vec<u8>,
         client_ip: Option<IpAddr>,
+        ctx: &RequestContext<'_>,
     ) -> Result<DnsResponse, DoHError> {
-        let proxy_timeout = self.globals.timeout;
-        let timeout_res = tokio::time::timeout(proxy_timeout, self._proxy(query, client_ip)).await;
+        let timeout_res =
+            tokio::time::timeout_at(ctx.deadline, self._proxy(query, client_ip, ctx)).await;
         timeout_res.map_err(|_| DoHError::UpstreamTimeout)?
     }
 
@@ -524,6 +602,7 @@ impl DoH {
         &self,
         mut query: Vec<u8>,
         client_ip: Option<IpAddr>,
+        ctx: &RequestContext<'_>,
     ) -> Result<DnsResponse, DoHError> {
         if query.len() < MIN_DNS_PACKET_LEN {
             return Err(DoHError::Incomplete);
@@ -567,12 +646,11 @@ impl DoH {
 
         // TCP
         if dns::is_truncated(&packet) {
-            let clients_count = self.globals.clients_count.current();
-            if self.globals.max_clients >= UDP_TCP_RATIO
-                && clients_count >= self.globals.max_clients / UDP_TCP_RATIO
-            {
-                return Err(DoHError::TooManyTcpSessions);
-            }
+            let _permit = ctx
+                .upstream_tcp
+                .acquire()
+                .await
+                .map_err(|_| DoHError::UpstreamIssue)?;
             let socket = match globals.server_address {
                 SocketAddr::V4(_) => TcpSocket::new_v4(),
                 SocketAddr::V6(_) => TcpSocket::new_v6(),
@@ -646,83 +724,127 @@ impl DoH {
         Ok(response)
     }
 
-    async fn client_serve<I>(self, stream: I, server: Arc<HttpBuilder<LocalExecutor>>)
-    where
-        I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
-    {
-        let clients_count = self.globals.clients_count.clone();
-        if clients_count.increment() > self.globals.max_clients {
-            clients_count.decrement();
-            return;
-        }
-        self.globals.runtime_handle.clone().spawn(async move {
-            tokio::time::timeout(
-                self.globals.timeout + Duration::from_secs(1),
-                server.serve_connection(TokioIo::new(stream), self),
-            )
-            .await
-            .ok();
-            clients_count.decrement();
-        });
-    }
-
-    async fn start_without_tls(
-        self,
-        listener: TcpListener,
-        server: Arc<HttpBuilder<LocalExecutor>>,
-    ) -> Result<(), DoHError> {
-        let listener_service = async {
-            while let Ok((stream, client_addr)) = listener.accept().await {
-                let mut doh = self.clone();
-                doh.remote_addr = Some(client_addr);
-                doh.client_serve(stream, server.clone()).await;
-            }
-            Ok(()) as Result<(), DoHError>
-        };
-        listener_service.await?;
-        Ok(())
-    }
-
     pub async fn entrypoint(self) -> Result<(), DoHError> {
-        let listen_address = self.globals.listen_address;
+        let server = Arc::new(Server::new(self)?);
+        let globals = &server.doh.globals;
+        let listen_address = globals.listen_address;
         let listener = TcpListener::bind(&listen_address)
             .await
             .map_err(DoHError::Io)?;
-        let path = &self.globals.path;
+        let scheme = if server.uses_tls() { "https" } else { "http" };
+        println!("Listening on {scheme}://{listen_address}{}", globals.path);
+        server.run(listener).await
+    }
+}
 
-        let tls_enabled: bool;
-        #[cfg(not(feature = "tls"))]
-        {
-            tls_enabled = false;
+/// Runtime state shared by the listener and all the connections.
+struct Server {
+    doh: DoH,
+    policy: Policy,
+    http: HttpBuilder<LocalExecutor>,
+    admission: Arc<Admission>,
+    upstream_tcp: Semaphore,
+}
+
+impl Server {
+    fn new(doh: DoH) -> Result<Server, DoHError> {
+        doh.globals.validate()?;
+        let policy = Policy::new(doh.globals.timeout);
+        Ok(Server::with_policy(doh, policy))
+    }
+
+    fn with_policy(doh: DoH, policy: Policy) -> Server {
+        let globals = &doh.globals;
+        let executor = LocalExecutor::new(globals.runtime_handle.clone());
+        let mut http = HttpBuilder::new(executor);
+        http.http1()
+            .timer(TokioTimer::new())
+            .header_read_timeout(policy.request)
+            .keep_alive(globals.keepalive)
+            .pipeline_flush(true);
+        http.http2()
+            .max_concurrent_streams(globals.max_concurrent_streams);
+        let admission = Admission::new(globals.max_clients);
+        let upstream_tcp = Semaphore::new((globals.max_clients / UDP_TCP_RATIO).max(1));
+        Server {
+            doh,
+            policy,
+            http,
+            admission,
+            upstream_tcp,
         }
+    }
+
+    #[cfg(feature = "tls")]
+    fn uses_tls(&self) -> bool {
+        let globals = &self.doh.globals;
+        globals.tls_cert_path.is_some() && globals.tls_cert_key_path.is_some()
+    }
+
+    #[cfg(not(feature = "tls"))]
+    fn uses_tls(&self) -> bool {
+        false
+    }
+
+    async fn run(self: Arc<Self>, listener: TcpListener) -> Result<(), DoHError> {
         #[cfg(feature = "tls")]
         {
-            tls_enabled =
-                self.globals.tls_cert_path.is_some() && self.globals.tls_cert_key_path.is_some();
-        }
-        if tls_enabled {
-            println!("Listening on https://{listen_address}{path}");
-        } else {
-            println!("Listening on http://{listen_address}{path}");
-        }
-
-        let executor = LocalExecutor::new(self.globals.runtime_handle.clone());
-        let mut server = HttpBuilder::new(executor);
-        server.http1().keep_alive(self.globals.keepalive);
-        server
-            .http2()
-            .max_concurrent_streams(self.globals.max_concurrent_streams);
-        server.http1().pipeline_flush(true);
-        let server = Arc::new(server);
-
-        #[cfg(feature = "tls")]
-        {
-            if tls_enabled {
-                self.start_with_tls(listener, server).await?;
-                return Ok(());
+            if self.uses_tls() {
+                return self.run_with_tls(listener).await;
             }
         }
-        self.start_without_tls(listener, server).await?;
-        Ok(())
+        self.run_without_tls(listener).await
+    }
+
+    fn spawn<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.doh.globals.runtime_handle.spawn(future);
+    }
+
+    /// Serves HTTP on an accepted connection, which has already been given a slot.
+    ///
+    /// `idle_since` is when the connection became ready for its first request:
+    /// the slot's `accepted_at` for plain connections, or the end of the TLS
+    /// handshake.
+    async fn serve_connection<I>(
+        self: Arc<Self>,
+        io: I,
+        remote_addr: SocketAddr,
+        slot: Slot,
+        idle_since: Instant,
+    ) where
+        I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    {
+        let activity = Activity::new(idle_since);
+        let mut doh = self.doh.clone();
+        doh.remote_addr = Some(remote_addr);
+        let service = ConnectionService {
+            server: Arc::clone(&self),
+            doh,
+            activity: Arc::clone(&activity),
+        };
+        let conn = std::pin::pin!(self.http.serve_connection(TokioIo::new(io), service));
+        lifecycle::drive(
+            conn,
+            |conn| conn.graceful_shutdown(),
+            &self.policy,
+            &activity,
+            &slot,
+        )
+        .await;
+    }
+
+    async fn run_without_tls(self: Arc<Self>, listener: TcpListener) -> Result<(), DoHError> {
+        let mut acceptor = Acceptor::default();
+        loop {
+            let (stream, remote_addr) = acceptor.accept(&listener).await;
+            let Some(slot) = self.admission.try_admit() else {
+                continue;
+            };
+            let idle_since = slot.accepted_at;
+            self.spawn(Arc::clone(&self).serve_connection(stream, remote_addr, slot, idle_since));
+        }
     }
 }

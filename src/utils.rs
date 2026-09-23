@@ -22,3 +22,11 @@ pub(crate) fn verify_remote_server(arg_val: &str) -> Result<String, String> {
         Err(err) => Err(format!("{err}")),
     }
 }
+
+pub(crate) fn verify_max_clients(arg_val: &str) -> Result<usize, String> {
+    match arg_val.parse::<usize>() {
+        Ok(0) => Err("must be at least 1".to_string()),
+        Ok(max_clients) => Ok(max_clients),
+        Err(err) => Err(err.to_string()),
+    }
+}
