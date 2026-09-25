@@ -2,7 +2,7 @@
 name = "libdoh"
 version = "0.9.16"
 authors = ["Frank Denis <github@pureftpd.org>"]
-description = "DoH and Oblivious DoH library for the rust-doh app"
+description = "DNS over HTTPS (DoH) and Oblivious DoH (ODoH) server library with Tokio, TLS, and DNS proxy support"
 keywords = ["dns", "https", "doh", "odoh", "proxy"]
 license = "MIT"
 homepage = "https://github.com/jedisct1/rust-doh"
