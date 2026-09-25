@@ -71,7 +71,7 @@ A fast and secure DoH (DNS-over-HTTPS) and ODoH (Oblivious DoH) server.
 
 ### Option 1: precompiled binaries for Linux
 
-Precompiled tarballs and Debian packages for Linux/x86_64 [can be downloaded here](https://github.com/jedisct1/doh-server/releases/latest).
+Precompiled tarballs and Debian packages for Linux/x86_64 [can be downloaded here](https://github.com/DNSCrypt/doh-server/releases/latest).
 
 ### Option 2: from source code
 
@@ -243,13 +243,13 @@ doh-proxy -H 'doh.example.com' \
           -I ~/.acme.sh/doh.example.com/doh.example.com.key
 ```
 
-> **Note:** Once HTTPS is enabled, HTTP connections will not be accepted. A sample self-signed certificate [`localhost.pem`](https://github.com/jedisct1/doh-server/raw/master/localhost.pem) is available for testing.
+> **Note:** Once HTTPS is enabled, HTTP connections will not be accepted. A sample self-signed certificate [`localhost.pem`](https://github.com/DNSCrypt/doh-server/raw/master/localhost.pem) is available for testing.
 
 ## Integration Examples
 
 ### With Encrypted DNS Server
 
-[Encrypted DNS Server](https://github.com/jedisct1/encrypted-dns-server) can handle both DNSCrypt and DoH on the same port:
+[Encrypted DNS Server](https://github.com/DNSCrypt/encrypted-dns-server) can handle both DNSCrypt and DoH on the same port:
 
 ```toml
 # In encrypted-dns-server.toml
@@ -631,7 +631,7 @@ Compatible DoH clients include:
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit pull requests or open issues on [GitHub](https://github.com/jedisct1/doh-server).
+Contributions are welcome! Please feel free to submit pull requests or open issues on [GitHub](https://github.com/DNSCrypt/doh-server).
 
 ## License
 
