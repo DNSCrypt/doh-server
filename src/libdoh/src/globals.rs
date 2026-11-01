@@ -39,10 +39,11 @@ pub struct Globals {
     /// Maximum size of a DNS query, in bytes.
     pub max_query_len: usize,
     pub keepalive: bool,
-    /// Returns a 406 when neither `Content-Type` nor `Accept` names a
-    /// supported type.
+    /// Returns a 406 for GET requests when neither `Content-Type` nor `Accept`
+    /// names a supported type.
     ///
     /// When false, these requests are treated as standard DoH queries.
+    /// A POST without a `Content-Type` always gets a 415.
     pub require_accept: bool,
     pub disable_post: bool,
     pub allow_odoh_post: bool,

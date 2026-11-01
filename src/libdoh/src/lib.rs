@@ -552,6 +552,8 @@ impl<R: Resolver> DoH<R> {
     ) -> Result<DoHType, Box<Response<Body>>> {
         let headers = req.headers();
         let content_type = match headers.get(hyper::header::CONTENT_TYPE) {
+            // Accept only describes the response, so a POST must send a Content-Type.
+            None if req.method() == Method::POST => None,
             None => match self.acceptable_content_type(headers) {
                 None if !self.globals.require_accept => return Ok(DoHType::Standard),
                 None => {
@@ -575,11 +577,13 @@ impl<R: Resolver> DoH<R> {
                         .unwrap();
                     return Err(Box::new(response));
                 }
-                Ok(content_type) => content_type,
+                Ok(content_type) => Some(content_type),
             },
         };
 
-        match self.doh_type(&content_type.to_ascii_lowercase()) {
+        match content_type
+            .and_then(|content_type| self.doh_type(&content_type.to_ascii_lowercase()))
+        {
             Some(doh_type) => Ok(doh_type),
             None => {
                 // Return UNSUPPORTED_MEDIA_TYPE with long cache time

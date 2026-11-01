@@ -1718,10 +1718,10 @@ mod resolvers {
             "GET /elsewhere?{dns} HTTP/1.1\r\nHost: localhost\r\n\
              Accept: application/dns-message\r\n\r\n"
         );
-        let empty_post = |content_type| {
+        let empty_post = |headers: &str| {
             format!(
                 "POST /dns-query HTTP/1.1\r\nHost: localhost\r\n\
-                 Content-Type: {content_type}\r\nContent-Length: 0\r\n\r\n"
+                 {headers}Content-Length: 0\r\n\r\n"
             )
             .into_bytes()
         };
@@ -1730,8 +1730,9 @@ mod resolvers {
             get_accepting(&dns, "text/html, */*"),
             get_accepting("name=example.com", "application/dns-json"),
             ODOH_CONFIGS_GET.to_vec(),
-            empty_post("application/oblivious-dns-message"),
-            empty_post("text/plain"),
+            empty_post("Content-Type: application/oblivious-dns-message\r\n"),
+            empty_post("Content-Type: text/plain\r\n"),
+            empty_post("Accept: application/dns-message\r\n"),
         ];
         paused_runtime().block_on(async {
             let mut lenient = offline_globals(T);
@@ -1741,9 +1742,9 @@ mod resolvers {
             without_odoh_and_json.odoh_rotator = None;
             without_odoh_and_json.enable_json = false;
             let cases = [
-                (offline_globals(T), [404, 406, 200, 200, 400, 415]),
-                (lenient, [200, 200, 200, 200, 400, 415]),
-                (without_odoh_and_json, [404, 406, 406, 404, 415, 415]),
+                (offline_globals(T), [404, 406, 200, 200, 400, 415, 415]),
+                (lenient, [200, 200, 200, 200, 400, 415, 415]),
+                (without_odoh_and_json, [404, 406, 406, 404, 415, 415, 415]),
             ];
             for (globals, statuses) in cases {
                 let server = test_server(globals, Echo::new());
