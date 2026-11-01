@@ -10,6 +10,7 @@ repository = "https://github.com/jedisct1/rust-doh"
 categories = ["asynchronous", "network-programming", "command-line-utilities"]
 edition = "2018"
 readme = "README.md"
+include = ["/src/*.rs", "/LICENSE", "/README.md", "/logo.png"]
 
 [features]
 default = ["tls"]
