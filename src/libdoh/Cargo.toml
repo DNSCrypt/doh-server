@@ -1,6 +1,6 @@
 [package]
 name = "libdoh"
-version = "0.11.0"
+version = "0.11.1"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "DNS over HTTPS (DoH) and Oblivious DoH (ODoH) server library with Tokio, TLS, and DNS proxy support"
 keywords = ["dns", "https", "doh", "odoh", "proxy"]
