@@ -61,7 +61,7 @@ impl Admission {
     /// Reserves a slot, or returns `None` if all of them are taken.
     pub(crate) fn try_admit(self: &Arc<Self>) -> Option<Slot> {
         self.occupied
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |occupied| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |occupied| {
                 (occupied < self.capacity).then(|| occupied + 1)
             })
             .ok()?;
