@@ -11,17 +11,14 @@ const FAMILY_IPV6: u16 = 2;
 
 /// Extract client IP from HTTP headers
 /// Checks X-Forwarded-For, X-Real-IP, and falls back to remote address
-pub fn extract_client_ip(
-    headers: &hyper::HeaderMap,
-    remote_addr: Option<std::net::SocketAddr>,
-) -> Option<IpAddr> {
+pub fn extract_client_ip(headers: &hyper::HeaderMap, remote_addr: std::net::SocketAddr) -> IpAddr {
     // Try X-Forwarded-For first (may contain multiple IPs)
     if let Some(xff) = headers.get("x-forwarded-for") {
         if let Ok(xff_str) = xff.to_str() {
             // Take the first IP in the list
             if let Some(first_ip) = xff_str.split(',').next() {
                 if let Ok(ip) = first_ip.trim().parse::<IpAddr>() {
-                    return Some(ip);
+                    return ip;
                 }
             }
         }
@@ -31,13 +28,13 @@ pub fn extract_client_ip(
     if let Some(xri) = headers.get("x-real-ip") {
         if let Ok(xri_str) = xri.to_str() {
             if let Ok(ip) = xri_str.parse::<IpAddr>() {
-                return Some(ip);
+                return ip;
             }
         }
     }
 
     // Fall back to remote address
-    remote_addr.map(|addr| addr.ip())
+    remote_addr.ip()
 }
 
 /// Build EDNS Client Subnet option data
@@ -207,35 +204,35 @@ mod tests {
     fn test_extract_client_ip() {
         use std::net::SocketAddr;
         let mut headers = hyper::HeaderMap::new();
+        let remote: SocketAddr = "203.0.113.45:12345".parse().unwrap();
 
         // Test X-Forwarded-For (highest priority)
         headers.insert("x-forwarded-for", "192.168.1.1, 10.0.0.1".parse().unwrap());
         assert_eq!(
-            extract_client_ip(&headers, None),
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+            extract_client_ip(&headers, remote),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))
         );
 
         // Test X-Real-IP (second priority)
         headers.clear();
         headers.insert("x-real-ip", "10.0.0.2".parse().unwrap());
         assert_eq!(
-            extract_client_ip(&headers, None),
-            Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)))
+            extract_client_ip(&headers, remote),
+            IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))
         );
 
         // Test remote_addr fallback (third priority)
         headers.clear();
-        let remote: SocketAddr = "203.0.113.45:12345".parse().unwrap();
         assert_eq!(
-            extract_client_ip(&headers, Some(remote)),
-            Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 45)))
+            extract_client_ip(&headers, remote),
+            IpAddr::V4(Ipv4Addr::new(203, 0, 113, 45))
         );
 
         // Test X-Forwarded-For takes precedence over remote_addr
         headers.insert("x-forwarded-for", "192.168.1.5".parse().unwrap());
         assert_eq!(
-            extract_client_ip(&headers, Some(remote)),
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5)))
+            extract_client_ip(&headers, remote),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5))
         );
     }
 

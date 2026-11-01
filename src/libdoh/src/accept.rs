@@ -43,7 +43,7 @@ impl Acceptor {
                 }
                 Err(e) => {
                     if let Some(message) = self.log_message(&e, Instant::now()) {
-                        eprintln!("{message}");
+                        log::error!("{message}");
                     }
                     if let Some(delay) = self.delay_after(&e) {
                         tokio::time::sleep(delay).await;

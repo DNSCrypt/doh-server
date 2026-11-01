@@ -18,74 +18,65 @@ fn real_time_runtime() -> Runtime {
         .unwrap()
 }
 
-fn test_globals(handle: &runtime::Handle, server_address: SocketAddr) -> Globals {
+fn test_globals(handle: &runtime::Handle) -> Globals {
     Globals {
-        #[cfg(feature = "tls")]
-        tls_cert_path: None,
-        #[cfg(feature = "tls")]
-        tls_cert_key_path: None,
         listen_address: "127.0.0.1:0".parse().unwrap(),
-        local_bind_address: "127.0.0.1:0".parse().unwrap(),
-        server_address,
-        path: "/dns-query".to_string(),
         max_clients: 16,
         timeout: Duration::from_secs(1),
-        max_concurrent_streams: 16,
-        min_ttl: 10,
-        max_ttl: 86400,
-        err_ttl: 2,
-        keepalive: true,
-        disable_post: false,
-        allow_odoh_post: false,
-        enable_ecs: false,
-        ecs_prefix_v4: 24,
-        ecs_prefix_v6: 56,
-        odoh_configs_path: "/.well-known/odohconfigs".to_string(),
-        odoh_rotator: Arc::new(ODoHRotator::new(handle.clone()).unwrap()),
-        runtime_handle: handle.clone(),
+        odoh_rotator: Some(Arc::new(ODoHRotator::new(handle.clone()).unwrap())),
+        ..Globals::default()
     }
 }
 
-fn test_doh(globals: Globals) -> DoH {
-    DoH {
-        globals: Arc::new(globals),
-        remote_addr: None,
-    }
+/// Allows a single TCP exchange at a time.
+fn test_forwarder(server_address: SocketAddr) -> Forwarder {
+    let mut forwarder = Forwarder::new(server_address, 1);
+    forwarder.local_bind_address = "127.0.0.1:0".parse().unwrap();
+    forwarder
 }
 
-fn test_server(globals: Globals) -> Arc<Server> {
-    Arc::new(Server::new(test_doh(globals)).unwrap())
+/// Nothing listens on that port, so queries never get an answer.
+fn offline_forwarder() -> Forwarder {
+    test_forwarder("127.0.0.1:9".parse().unwrap())
+}
+
+fn test_server<R: Resolver>(globals: Globals, resolver: R) -> Arc<Server<R>> {
+    Arc::new(Server::new(DoH::new(globals, resolver)).unwrap())
 }
 
 /// A server with deadlines shorter than any timeout would allow, so that tests
 /// using real time can reach them quickly.
-fn test_server_with_policy(globals: Globals, policy: lifecycle::Policy) -> Arc<Server> {
-    Arc::new(Server::with_policy(test_doh(globals), policy))
+fn test_server_with_policy(
+    globals: Globals,
+    forwarder: Forwarder,
+    policy: lifecycle::Policy,
+) -> Arc<Server<Forwarder>> {
+    Arc::new(Server::with_policy(DoH::new(globals, forwarder), policy))
 }
 
-/// Globals for a server whose requests never reach an upstream resolver.
 fn offline_globals(timeout: Duration) -> Globals {
-    let mut globals = test_globals(&runtime::Handle::current(), "127.0.0.1:9".parse().unwrap());
+    let mut globals = test_globals(&runtime::Handle::current());
     globals.timeout = timeout;
     globals
 }
 
-fn offline_server(timeout: Duration) -> Arc<Server> {
-    test_server(offline_globals(timeout))
+fn offline_server(timeout: Duration) -> Arc<Server<Forwarder>> {
+    test_server(offline_globals(timeout), offline_forwarder())
 }
 
 /// An offline server with 10 slots, so that admitting a few more connections
 /// is enough to raise the pressure.
-fn ten_slot_server() -> Arc<Server> {
+fn ten_slot_server() -> Arc<Server<Forwarder>> {
     let mut globals = offline_globals(T);
     globals.max_clients = 10;
-    test_server(globals)
+    test_server(globals, offline_forwarder())
 }
 
-fn upstream_server(upstream: &Upstream, max_clients: usize) -> Arc<Server> {
-    let mut globals = test_globals(&runtime::Handle::current(), upstream.addr);
-    globals.max_clients = max_clients;
-    test_server(globals)
+fn upstream_server(upstream: &Upstream) -> Arc<Server<Forwarder>> {
+    test_server(
+        test_globals(&runtime::Handle::current()),
+        test_forwarder(upstream.addr),
+    )
 }
 
 const T: Duration = Duration::from_secs(10);
@@ -98,11 +89,21 @@ fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
 }
 
-fn request_context(server: &Server) -> RequestContext<'_> {
+fn request_context<R>(server: &Server<R>) -> RequestContext {
     RequestContext {
         deadline: tokio::time::Instant::now() + server.policy.request,
-        upstream_tcp: &server.upstream_tcp,
+        remote_addr: client_addr(),
     }
+}
+
+async fn query_upstream(
+    server: &Server<Forwarder>,
+    ctx: &RequestContext,
+) -> Result<DnsResponse, DoHError> {
+    server
+        .doh
+        .resolve(dns_query(), DoHType::Standard, HeaderMap::new(), ctx)
+        .await
 }
 
 fn dns_query() -> Vec<u8> {
@@ -211,7 +212,7 @@ mod config {
     #[test]
     fn library_timeout_range() {
         let runtime = real_time_runtime();
-        let mut globals = test_globals(runtime.handle(), "127.0.0.1:53".parse().unwrap());
+        let mut globals = test_globals(runtime.handle());
         let cases = [
             (Duration::ZERO, false),
             (Duration::from_millis(999), false),
@@ -229,16 +230,19 @@ mod config {
     }
 
     #[test]
-    fn library_rejects_zero_clients() {
+    fn library_limits() {
         let runtime = real_time_runtime();
-        let mut globals = test_globals(runtime.handle(), "127.0.0.1:53".parse().unwrap());
+        let mut globals = test_globals(runtime.handle());
         globals.max_clients = 0;
         assert!(matches!(
             globals.validate(),
             Err(DoHError::InvalidConfig(_))
         ));
         globals.max_clients = 1;
-        assert!(globals.validate().is_ok());
+        for (max_query_len, valid) in [(16, false), (17, true), (65535, true), (65536, false)] {
+            globals.max_query_len = max_query_len;
+            assert_eq!(globals.validate().is_ok(), valid, "{max_query_len}");
+        }
     }
 
     #[test]
@@ -246,11 +250,11 @@ mod config {
         let runtime = real_time_runtime();
         let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         for (timeout, max_clients) in [(Duration::ZERO, 16), (Duration::from_secs(10), 0)] {
-            let mut globals = test_globals(runtime.handle(), "127.0.0.1:53".parse().unwrap());
+            let mut globals = test_globals(runtime.handle());
             globals.listen_address = taken.local_addr().unwrap();
             globals.timeout = timeout;
             globals.max_clients = max_clients;
-            let result = runtime.block_on(test_doh(globals).entrypoint());
+            let result = runtime.block_on(DoH::new(globals, offline_forwarder()).entrypoint());
             assert!(matches!(result, Err(DoHError::InvalidConfig(_))));
         }
     }
@@ -261,13 +265,9 @@ mod upstream_tcp {
 
     #[test]
     fn pool_size() {
-        let runtime = real_time_runtime();
-        let _guard = runtime.enter();
-        for (max_clients, permits) in [(1, 1), (7, 1), (8, 1), (15, 1), (16, 2), (512, 64)] {
-            let mut globals = test_globals(runtime.handle(), "127.0.0.1:53".parse().unwrap());
-            globals.max_clients = max_clients;
-            let server = test_server(globals);
-            assert_eq!(server.upstream_tcp.available_permits(), permits);
+        for (max_tcp_connections, permits) in [(0, 1), (1, 1), (64, 64)] {
+            let forwarder = Forwarder::new("127.0.0.1:53".parse().unwrap(), max_tcp_connections);
+            assert_eq!(forwarder.tcp.available_permits(), permits);
         }
     }
 
@@ -275,32 +275,18 @@ mod upstream_tcp {
     fn truncated_answers_are_retried_over_tcp() {
         real_time_runtime().block_on(async {
             let upstream = Upstream::start(true, Tcp::Answer).await;
-            let server = upstream_server(&upstream, 1);
+            let server = upstream_server(&upstream);
             let ctx = request_context(&server);
-            let response = server.doh.proxy(dns_query(), None, &ctx).await.unwrap();
+            let response = query_upstream(&server, &ctx).await.unwrap();
             assert!(answered_over_tcp(&response.packet));
-            assert_eq!(server.upstream_tcp.available_permits(), 1);
+            assert_eq!(server.doh.resolver.tcp.available_permits(), 1);
 
             let upstream = Upstream::start(false, Tcp::Answer).await;
-            let server = upstream_server(&upstream, 1);
+            let server = upstream_server(&upstream);
             let ctx = request_context(&server);
-            let response = server.doh.proxy(dns_query(), None, &ctx).await.unwrap();
+            let response = query_upstream(&server, &ctx).await.unwrap();
             assert!(!answered_over_tcp(&response.packet));
             assert_eq!(upstream.tcp_connections.load(Ordering::SeqCst), 0);
-        });
-    }
-
-    #[test]
-    fn downstream_connections_do_not_prevent_tcp_fallback() {
-        real_time_runtime().block_on(async {
-            let upstream = Upstream::start(true, Tcp::Answer).await;
-            let server = upstream_server(&upstream, 8);
-            let _slots: Vec<_> = (0..8)
-                .map(|_| server.admission.try_admit().unwrap())
-                .collect();
-            let ctx = request_context(&server);
-            let response = server.doh.proxy(dns_query(), None, &ctx).await.unwrap();
-            assert!(answered_over_tcp(&response.packet));
         });
     }
 
@@ -308,10 +294,10 @@ mod upstream_tcp {
     fn a_waiting_lookup_proceeds_when_a_permit_is_released() {
         real_time_runtime().block_on(async {
             let upstream = Upstream::start(true, Tcp::Answer).await;
-            let server = upstream_server(&upstream, 1);
+            let server = upstream_server(&upstream);
             let ctx = request_context(&server);
-            let permit = server.upstream_tcp.try_acquire().unwrap();
-            let lookup = server.doh.proxy(dns_query(), None, &ctx);
+            let permit = server.doh.resolver.tcp.try_acquire().unwrap();
+            let lookup = query_upstream(&server, &ctx);
             let mut lookup = std::pin::pin!(lookup);
             let waiting = tokio::time::timeout(Duration::from_millis(300), &mut lookup).await;
             assert!(waiting.is_err());
@@ -319,7 +305,7 @@ mod upstream_tcp {
             drop(permit);
             let response = lookup.await.unwrap();
             assert!(answered_over_tcp(&response.packet));
-            assert_eq!(server.upstream_tcp.available_permits(), 1);
+            assert_eq!(server.doh.resolver.tcp.available_permits(), 1);
         });
     }
 
@@ -327,18 +313,16 @@ mod upstream_tcp {
     fn cancelling_a_waiting_lookup_leaves_no_waiter_behind() {
         real_time_runtime().block_on(async {
             let upstream = Upstream::start(true, Tcp::Answer).await;
-            let server = upstream_server(&upstream, 1);
+            let server = upstream_server(&upstream);
             let ctx = request_context(&server);
-            let permit = server.upstream_tcp.try_acquire().unwrap();
-            let cancelled = tokio::time::timeout(
-                Duration::from_millis(200),
-                server.doh.proxy(dns_query(), None, &ctx),
-            )
-            .await;
+            let permit = server.doh.resolver.tcp.try_acquire().unwrap();
+            let cancelled =
+                tokio::time::timeout(Duration::from_millis(200), query_upstream(&server, &ctx))
+                    .await;
             assert!(cancelled.is_err());
             drop(permit);
-            assert_eq!(server.upstream_tcp.available_permits(), 1);
-            assert!(server.upstream_tcp.try_acquire().is_ok());
+            assert_eq!(server.doh.resolver.tcp.available_permits(), 1);
+            assert!(server.doh.resolver.tcp.try_acquire().is_ok());
         });
     }
 
@@ -346,10 +330,10 @@ mod upstream_tcp {
     fn a_full_pool_times_out_as_an_upstream_error() {
         real_time_runtime().block_on(async {
             let upstream = Upstream::start(true, Tcp::Answer).await;
-            let server = upstream_server(&upstream, 1);
+            let server = upstream_server(&upstream);
             let ctx = request_context(&server);
-            let _permit = server.upstream_tcp.try_acquire().unwrap();
-            let result = server.doh.proxy(dns_query(), None, &ctx).await;
+            let _permit = server.doh.resolver.tcp.try_acquire().unwrap();
+            let result = query_upstream(&server, &ctx).await;
             assert!(matches!(result, Err(DoHError::UpstreamTimeout)));
         });
     }
@@ -358,14 +342,14 @@ mod upstream_tcp {
     fn a_stalled_exchange_times_out_and_releases_its_permit() {
         real_time_runtime().block_on(async {
             let upstream = Upstream::start(true, Tcp::Stall).await;
-            let server = upstream_server(&upstream, 1);
+            let server = upstream_server(&upstream);
             let ctx = request_context(&server);
             let started = tokio::time::Instant::now();
-            let result = server.doh.proxy(dns_query(), None, &ctx).await;
+            let result = query_upstream(&server, &ctx).await;
             assert!(matches!(result, Err(DoHError::UpstreamTimeout)));
             assert!(started.elapsed() >= Duration::from_secs(1));
             assert_eq!(upstream.tcp_connections.load(Ordering::SeqCst), 1);
-            assert_eq!(server.upstream_tcp.available_permits(), 1);
+            assert_eq!(server.doh.resolver.tcp.available_permits(), 1);
         });
     }
 }
@@ -383,11 +367,11 @@ fn client_addr() -> SocketAddr {
 }
 
 /// Serves one in-memory connection, as if it had just been accepted.
-fn connect(server: &Arc<Server>) -> tokio::io::DuplexStream {
+fn connect<R: Resolver>(server: &Arc<Server<R>>) -> tokio::io::DuplexStream {
     let (client, server_io) = tokio::io::duplex(64 * 1024);
     let slot = server.admission.try_admit().expect("no free slot");
     let idle_since = slot.accepted_at;
-    server.spawn(Arc::clone(server).serve_connection(server_io, client_addr(), slot, idle_since));
+    tokio::spawn(Arc::clone(server).serve_connection(server_io, client_addr(), slot, idle_since));
     client
 }
 
@@ -666,7 +650,7 @@ mod http1 {
         paused_runtime().block_on(async {
             let mut globals = offline_globals(T);
             globals.keepalive = false;
-            let server = test_server(globals);
+            let server = test_server(globals, offline_forwarder());
             let mut client = Http1::new(connect(&server));
             assert!(client.send(ODOH_CONFIGS_GET).await);
             let response = client.response().await.unwrap();
@@ -959,16 +943,16 @@ mod tls {
         TlsConnector::from(Arc::new(config))
     }
 
-    fn connect_tls(server: &Arc<Server>) -> tokio::io::DuplexStream {
+    fn connect_tls(server: &Arc<Server<Forwarder>>) -> tokio::io::DuplexStream {
         let (client, server_io) = tokio::io::duplex(64 * 1024);
         accept_tls(server, server_io);
         client
     }
 
-    fn accept_tls(server: &Arc<Server>, server_io: tokio::io::DuplexStream) {
+    fn accept_tls(server: &Arc<Server<Forwarder>>, server_io: tokio::io::DuplexStream) {
         let slot = server.admission.try_admit().expect("no free slot");
         let acceptor = crate::tls::create_tls_acceptor(CERTS, CERTS).unwrap();
-        server.spawn(Arc::clone(server).serve_tls_connection(
+        tokio::spawn(Arc::clone(server).serve_tls_connection(
             acceptor,
             server_io,
             client_addr(),
@@ -1081,7 +1065,7 @@ mod tls {
 
     /// A server at 90% of its capacity once the connection under test is
     /// admitted, so that pressure is high.
-    fn server_under_high_pressure() -> (Arc<Server>, Vec<crate::admission::Slot>) {
+    fn server_under_high_pressure() -> (Arc<Server<Forwarder>>, Vec<crate::admission::Slot>) {
         let server = ten_slot_server();
         let others = (0..8)
             .map(|_| server.admission.try_admit().unwrap())
@@ -1291,12 +1275,10 @@ fn encoded_query() -> String {
 }
 
 fn doh_get() -> Vec<u8> {
-    format!(
-        "GET /dns-query?dns={} HTTP/1.1\r\nHost: localhost\r\n\
-         Accept: application/dns-message\r\n\r\n",
-        encoded_query()
+    get_accepting(
+        &format!("dns={}", encoded_query()),
+        "application/dns-message",
     )
-    .into_bytes()
 }
 
 async fn eventually(limit: Duration, mut condition: impl FnMut() -> bool) {
@@ -1326,7 +1308,7 @@ mod request_budget {
 
     const T: Duration = Duration::from_secs(1);
 
-    async fn post_after(server: &Arc<Server>, body_delay: Duration) -> (u16, Duration) {
+    async fn post_after(server: &Arc<Server<Forwarder>>, body_delay: Duration) -> (u16, Duration) {
         let start = tokio::time::Instant::now();
         let mut client = Http1::new(connect(server));
         let query = dns_query();
@@ -1341,7 +1323,7 @@ mod request_budget {
     fn a_slow_resolver_gets_the_upstream_error() {
         real_time_runtime().block_on(async {
             let upstream = Upstream::with_delays(false, Tcp::Answer, ms(2000), ms(0)).await;
-            let server = upstream_server(&upstream, 16);
+            let server = upstream_server(&upstream);
             let start = tokio::time::Instant::now();
             let mut client = Http1::new(connect(&server));
             assert!(client.send(&doh_get()).await);
@@ -1354,7 +1336,7 @@ mod request_budget {
     fn time_spent_receiving_the_body_is_not_given_back_for_the_lookup() {
         real_time_runtime().block_on(async {
             let upstream = Upstream::with_delays(false, Tcp::Answer, ms(500), ms(0)).await;
-            let server = upstream_server(&upstream, 16);
+            let server = upstream_server(&upstream);
             assert_eq!(post_after(&server, ms(200)).await.0, 200);
             let (status, elapsed) = post_after(&server, ms(700)).await;
             assert_eq!(status, 502);
@@ -1366,22 +1348,21 @@ mod request_budget {
     fn waiting_for_a_permit_and_falling_back_to_tcp_share_the_budget() {
         real_time_runtime().block_on(async {
             let upstream = Upstream::with_delays(true, Tcp::Answer, ms(200), ms(300)).await;
-            let server = upstream_server(&upstream, UDP_TCP_RATIO);
-            assert_eq!(server.upstream_tcp.available_permits(), 1);
+            let server = upstream_server(&upstream);
             let (status, elapsed) = post_after(&server, ms(400)).await;
             assert_eq!(status, 200);
             assert!(elapsed < T, "{:?}", elapsed);
 
             let holder = Arc::clone(&server);
             let permit_released = tokio::spawn(async move {
-                let _permit = holder.upstream_tcp.acquire().await.unwrap();
+                let _permit = holder.doh.resolver.tcp.acquire().await.unwrap();
                 tokio::time::sleep(ms(900)).await;
             });
             let (status, elapsed) = post_after(&server, ms(400)).await;
             assert_eq!(status, 502);
             assert_about(elapsed, T);
             permit_released.await.unwrap();
-            assert_eq!(server.upstream_tcp.available_permits(), 1);
+            assert_eq!(server.doh.resolver.tcp.available_permits(), 1);
         });
     }
 }
@@ -1389,19 +1370,19 @@ mod request_budget {
 mod forced_close {
     use super::*;
 
-    fn stalling_server(upstream: &Upstream) -> Arc<Server> {
-        let mut globals = test_globals(&runtime::Handle::current(), upstream.addr);
+    fn stalling_server(upstream: &Upstream) -> Arc<Server<Forwarder>> {
+        let mut globals = test_globals(&runtime::Handle::current());
         globals.max_clients = 1;
         let policy = lifecycle::Policy {
             request: Duration::from_secs(10),
             retire_after: Duration::from_secs(1),
             drain: Duration::from_secs(1),
         };
-        test_server_with_policy(globals, policy)
+        test_server_with_policy(globals, test_forwarder(upstream.addr), policy)
     }
 
-    async fn check_cleanup(server: &Arc<Server>, upstream: &Upstream) {
-        eventually(ms(300), || server.upstream_tcp.available_permits() == 1).await;
+    async fn check_cleanup(server: &Arc<Server<Forwarder>>, upstream: &Upstream) {
+        eventually(ms(300), || server.doh.resolver.tcp.available_permits() == 1).await;
         eventually(ms(300), || {
             upstream.closed_tcp_connections.load(Ordering::SeqCst) == 1
         })
@@ -1418,7 +1399,7 @@ mod forced_close {
             let client = H2Client::start(connect(&server), None).await;
             let path = format!("/dns-query?dns={}", encoded_query());
             let (response, _) = client.request("GET", &path, true).await.unwrap();
-            eventually(ms(500), || server.upstream_tcp.available_permits() == 0).await;
+            eventually(ms(500), || server.doh.resolver.tcp.available_permits() == 0).await;
             assert!(response.await.is_err());
             assert_about(start.elapsed(), Duration::from_secs(2));
             check_cleanup(&server, &upstream).await;
@@ -1433,7 +1414,7 @@ mod forced_close {
             let start = tokio::time::Instant::now();
             let mut client = Http1::new(connect(&server));
             assert!(client.send(&doh_get()).await);
-            eventually(ms(500), || server.upstream_tcp.available_permits() == 0).await;
+            eventually(ms(500), || server.doh.resolver.tcp.available_permits() == 0).await;
             assert!(client.response().await.is_none());
             assert_about(start.elapsed(), Duration::from_secs(2));
             check_cleanup(&server, &upstream).await;
@@ -1454,7 +1435,7 @@ mod listeners {
         }
     }
 
-    async fn listen(server: &Arc<Server>) -> SocketAddr {
+    async fn listen(server: &Arc<Server<Forwarder>>) -> SocketAddr {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(Arc::clone(server).run(listener));
@@ -1466,7 +1447,7 @@ mod listeners {
         real_time_runtime().block_on(async {
             let mut globals = offline_globals(T);
             globals.max_clients = 1;
-            let server = test_server(globals);
+            let server = test_server(globals, offline_forwarder());
             let addr = listen(&server).await;
 
             let mut first = Http1::new(TcpStream::connect(addr).await.unwrap());
@@ -1490,7 +1471,7 @@ mod listeners {
         real_time_runtime().block_on(async {
             let globals = offline_globals(Duration::from_secs(1));
             let policy = short_policy(Duration::from_secs(2), Duration::from_secs(1));
-            let server = test_server_with_policy(globals, policy);
+            let server = test_server_with_policy(globals, offline_forwarder(), policy);
             let addr = listen(&server).await;
             let start = tokio::time::Instant::now();
             let mut client = Http1::new(TcpStream::connect(addr).await.unwrap());
@@ -1511,7 +1492,7 @@ mod listeners {
         real_time_runtime().block_on(async {
             let globals = offline_globals(Duration::from_secs(1));
             let policy = short_policy(ms(500), Duration::from_secs(60));
-            let server = test_server_with_policy(globals, policy);
+            let server = test_server_with_policy(globals, offline_forwarder(), policy);
             let addr = listen(&server).await;
             let start = tokio::time::Instant::now();
             let client = H2Client::start(TcpStream::connect(addr).await.unwrap(), Some(0)).await;
@@ -1536,7 +1517,7 @@ mod listeners {
             globals.max_clients = 1;
             globals.tls_cert_path = Some(certs.into());
             globals.tls_cert_key_path = Some(certs.into());
-            let server = test_server(globals);
+            let server = test_server(globals, offline_forwarder());
             let addr = listen(&server).await;
 
             let tls13: &[&'static rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
@@ -1569,6 +1550,304 @@ mod listeners {
             );
             assert!(third.send(ODOH_CONFIGS_GET).await);
             assert_eq!(third.response().await.unwrap().status, 200);
+        });
+    }
+}
+
+/// Answers each query with itself, or with an error, and keeps it.
+struct Echo {
+    allow_connections: bool,
+    error: Option<fn() -> DoHError>,
+    queries: std::sync::Mutex<Vec<Query>>,
+}
+
+impl Echo {
+    fn new() -> Echo {
+        Echo {
+            allow_connections: true,
+            error: None,
+            queries: Default::default(),
+        }
+    }
+}
+
+impl Resolver for Echo {
+    fn allow_connection(&self, _remote_addr: SocketAddr) -> bool {
+        self.allow_connections
+    }
+
+    async fn resolve(&self, query: Query) -> Result<DnsResponse, DoHError> {
+        let packet = query.packet.clone();
+        self.queries.lock().unwrap().push(query);
+        if let Some(error) = self.error {
+            return Err(error());
+        }
+        let cache = CachePolicy {
+            max_age: 42,
+            scope: CacheScope::Private,
+            ..CachePolicy::default()
+        };
+        Ok(DnsResponse { packet, cache })
+    }
+}
+
+fn get_accepting(query_string: &str, content_type: &str) -> Vec<u8> {
+    format!(
+        "GET /dns-query?{query_string} HTTP/1.1\r\nHost: localhost\r\n\
+         Accept: {content_type}\r\n\r\n"
+    )
+    .into_bytes()
+}
+
+mod resolvers {
+    use tokio::net::TcpStream;
+
+    use super::*;
+
+    #[test]
+    fn a_resolver_gets_the_queries_and_sets_the_cache_policy() {
+        for cors in [false, true] {
+            paused_runtime().block_on(async {
+                let mut globals = offline_globals(T);
+                globals.cors = cors;
+                let server = test_server(globals, Echo::new());
+                let mut client = Http1::new(connect(&server));
+                let query = dns_query();
+                let mut post = post_head(query.len());
+                post.extend(&query);
+                let json = get_accepting("name=example.com&type=A", "application/dns-json");
+                let requests = vec![
+                    (doh_get(), "application/dns-message"),
+                    (post, "application/dns-message"),
+                    (json, "application/dns-json"),
+                ];
+                for (request, content_type) in requests {
+                    assert!(client.send(&request).await);
+                    let response = client.response().await.unwrap();
+                    assert_eq!(response.status, 200);
+                    assert_eq!(response.header("content-type"), Some(content_type));
+                    assert_eq!(
+                        response.header("cache-control"),
+                        Some("private, max-age=42")
+                    );
+                    assert_eq!(
+                        response.header("access-control-allow-origin"),
+                        cors.then_some("*")
+                    );
+                }
+                let queries = server.doh.resolver.queries.lock().unwrap();
+                let kinds: Vec<_> = queries.iter().map(|query| query.kind).collect();
+                assert_eq!(kinds, [DoHType::Standard, DoHType::Standard, DoHType::Json]);
+                assert_eq!(queries[0].packet, query);
+                assert_eq!(queries[1].packet, query);
+                for query in queries.iter() {
+                    assert_eq!(query.remote_addr, client_addr());
+                    assert_eq!(query.headers["host"], "localhost");
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn errors_become_status_codes() {
+        let cases: [(fn() -> DoHError, u16); 2] = [
+            (|| DoHError::TooManyRequests, 429),
+            (|| DoHError::UpstreamIssue, 502),
+        ];
+        for (error, status) in cases {
+            paused_runtime().block_on(async {
+                let mut echo = Echo::new();
+                echo.error = Some(error);
+                let server = test_server(offline_globals(T), echo);
+                let mut client = Http1::new(connect(&server));
+                assert!(client.send(&doh_get()).await);
+                assert_eq!(client.response().await.unwrap().status, status);
+
+                // Too short to be DNS, so the resolver never sees it.
+                let mut post = post_head(SHORT_QUERY.len());
+                post.extend(SHORT_QUERY);
+                assert!(client.send(&post).await);
+                assert_eq!(client.response().await.unwrap().status, 422);
+                assert_eq!(server.doh.resolver.queries.lock().unwrap().len(), 1);
+            });
+        }
+    }
+
+    async fn closed_at_once(addr: SocketAddr) -> bool {
+        let mut client = Http1::new(TcpStream::connect(addr).await.unwrap());
+        let closed = tokio::time::timeout(ms(500), client.closed()).await;
+        closed.ok() == Some(true)
+    }
+
+    fn refusing_echo() -> Echo {
+        Echo {
+            allow_connections: false,
+            ..Echo::new()
+        }
+    }
+
+    #[test]
+    fn refused_connections_are_closed_at_once() {
+        real_time_runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            tokio::spawn(DoH::new(offline_globals(T), refusing_echo()).serve(listener));
+            assert!(closed_at_once(addr).await);
+        });
+    }
+
+    #[cfg(feature = "tls")]
+    #[test]
+    fn refused_connections_are_closed_before_the_tls_handshake() {
+        real_time_runtime().block_on(async {
+            let server = test_server(offline_globals(T), refusing_echo());
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let certs = super::tls::CERTS;
+            let tls_acceptor = crate::tls::create_tls_acceptor(certs, certs).unwrap();
+            let (_, receiver) = tokio::sync::watch::channel(Some(tls_acceptor));
+            tokio::spawn(server.accept_tls_connections(listener, receiver));
+            assert!(closed_at_once(addr).await);
+        });
+    }
+
+    #[test]
+    fn routing_follows_the_settings() {
+        let dns = format!("dns={}", encoded_query());
+        let elsewhere = format!(
+            "GET /elsewhere?{dns} HTTP/1.1\r\nHost: localhost\r\n\
+             Accept: application/dns-message\r\n\r\n"
+        );
+        let empty_post = |content_type| {
+            format!(
+                "POST /dns-query HTTP/1.1\r\nHost: localhost\r\n\
+                 Content-Type: {content_type}\r\nContent-Length: 0\r\n\r\n"
+            )
+            .into_bytes()
+        };
+        let requests = [
+            elsewhere.into_bytes(),
+            get_accepting(&dns, "text/html, */*"),
+            get_accepting("name=example.com", "application/dns-json"),
+            ODOH_CONFIGS_GET.to_vec(),
+            empty_post("application/oblivious-dns-message"),
+            empty_post("text/plain"),
+        ];
+        paused_runtime().block_on(async {
+            let mut lenient = offline_globals(T);
+            lenient.path = None;
+            lenient.require_accept = false;
+            let mut without_odoh_and_json = offline_globals(T);
+            without_odoh_and_json.odoh_rotator = None;
+            without_odoh_and_json.enable_json = false;
+            let cases = [
+                (offline_globals(T), [404, 406, 200, 200, 400, 415]),
+                (lenient, [200, 200, 200, 200, 400, 415]),
+                (without_odoh_and_json, [404, 406, 406, 404, 415, 415]),
+            ];
+            for (globals, statuses) in cases {
+                let server = test_server(globals, Echo::new());
+                let mut client = Http1::new(connect(&server));
+                for (request, status) in requests.iter().zip(statuses) {
+                    assert!(client.send(request).await);
+                    let response = client.response().await.unwrap();
+                    assert_eq!(
+                        response.status,
+                        status,
+                        "{}",
+                        String::from_utf8_lossy(request)
+                    );
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn queries_up_to_the_maximum_size_are_accepted() {
+        use base64::engine::general_purpose::URL_SAFE;
+
+        paused_runtime().block_on(async {
+            let server = test_server(offline_globals(T), Echo::new());
+            let max_query_len = server.doh.globals.max_query_len;
+            let mut client = Http1::new(connect(&server));
+            let accepting = |query: String| get_accepting(&query, "application/dns-message");
+            // A body that is too large may leave the connection unusable, so it comes last.
+            for (len, statuses) in [
+                (max_query_len, [200; 3]),
+                (max_query_len + 1, [400, 400, 413]),
+            ] {
+                let query = vec![0u8; len];
+                let mut post = post_head(len);
+                post.extend(&query);
+                let requests = vec![
+                    accepting(format!("dns={}", BASE64_URL_SAFE_NO_PAD.encode(&query))),
+                    accepting(format!("dns={}", URL_SAFE.encode(&query))),
+                    post,
+                ];
+                for (request, status) in requests.into_iter().zip(statuses) {
+                    assert!(client.send(&request).await);
+                    assert_eq!(client.response().await.unwrap().status, status, "{len}");
+                }
+            }
+            assert_eq!(server.doh.resolver.queries.lock().unwrap().len(), 3);
+
+            // The server builds JSON queries itself, and they have the same limit.
+            // This one is a 29-byte DNS message.
+            let json = get_accepting("name=example.com", "application/dns-json");
+            for (max_query_len, status) in [(29, 200), (28, 413)] {
+                let mut globals = offline_globals(T);
+                globals.max_query_len = max_query_len;
+                let server = test_server(globals, Echo::new());
+                let mut client = Http1::new(connect(&server));
+                assert!(client.send(&json).await);
+                assert_eq!(client.response().await.unwrap().status, status);
+            }
+        });
+    }
+}
+
+mod client_subnet {
+    use super::*;
+
+    /// The ECS option for 198.51.100.0/24.
+    const ECS_OPTION: [u8; 11] = [0, 8, 0, 7, 0, 1, 24, 0, 198, 51, 100];
+
+    fn has_ecs_option(packet: &[u8]) -> bool {
+        packet.windows(ECS_OPTION.len()).any(|w| w == ECS_OPTION)
+    }
+
+    #[test]
+    fn forwarded_addresses_are_sent_upstream_unless_the_query_is_oblivious() {
+        real_time_runtime().block_on(async {
+            let upstream = Upstream::start(false, Tcp::Answer).await;
+            let mut forwarder = test_forwarder(upstream.addr);
+            forwarder.enable_ecs = true;
+            let server = test_server(test_globals(&runtime::Handle::current()), forwarder);
+            let mut client = Http1::new(connect(&server));
+            let request = format!(
+                "GET /dns-query?dns={} HTTP/1.1\r\nHost: localhost\r\n\
+                 Accept: application/dns-message\r\nX-Forwarded-For: 198.51.100.7\r\n\r\n",
+                encoded_query()
+            );
+            assert!(client.send(request.as_bytes()).await);
+            let response = client.response().await.unwrap();
+            assert_eq!(response.status, 200);
+            assert_eq!(
+                response.header("cache-control"),
+                Some("max-age=604800, stale-if-error=86400, stale-while-revalidate=60")
+            );
+            assert_eq!(response.header("access-control-allow-origin"), Some("*"));
+            assert!(has_ecs_option(&response.body));
+
+            let mut headers = HeaderMap::new();
+            headers.insert("x-forwarded-for", "198.51.100.7".parse().unwrap());
+            let ctx = request_context(&server);
+            let response = server
+                .doh
+                .resolve(dns_query(), DoHType::Oblivious, headers, &ctx)
+                .await
+                .unwrap();
+            assert!(!has_ecs_option(&response.packet));
         });
     }
 }

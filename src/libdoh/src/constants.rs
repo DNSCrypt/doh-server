@@ -7,4 +7,3 @@ pub const STALE_WHILE_REVALIDATE_SECS: u32 = 60;
 #[cfg(feature = "tls")]
 pub const CERTS_WATCH_DELAY_SECS: u32 = 10;
 pub const ODOH_KEY_ROTATION_SECS: u32 = 86400;
-pub const UDP_TCP_RATIO: usize = 8;

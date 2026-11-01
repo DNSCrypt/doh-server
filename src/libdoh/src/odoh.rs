@@ -101,10 +101,7 @@ pub struct ODoHRotator {
 
 impl ODoHRotator {
     pub fn new(runtime_handle: runtime::Handle) -> Result<ODoHRotator, DoHError> {
-        let public_key = match ODoHPublicKey::new() {
-            Ok(key) => Arc::new(ArcSwap::from_pointee(key)),
-            Err(e) => panic!("ODoH key rotation error: {}", e),
-        };
+        let public_key = Arc::new(ArcSwap::from_pointee(ODoHPublicKey::new()?));
 
         let current_key = Arc::clone(&public_key);
 
@@ -115,7 +112,7 @@ impl ODoHRotator {
                     Ok(key) => {
                         current_key.store(Arc::new(key));
                     }
-                    Err(e) => eprintln!("ODoH key rotation error: {e}"),
+                    Err(e) => log::error!("ODoH key rotation error: {e}"),
                 };
             }
         });

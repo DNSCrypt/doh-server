@@ -8,18 +8,37 @@ mod config;
 mod constants;
 mod utils;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
 
 use libdoh::odoh::ODoHRotator;
 use libdoh::reexports::tokio;
 use libdoh::*;
 
 use crate::config::*;
-use crate::constants::*;
+
+/// Prints libdoh's log messages to stderr.
+struct Logger;
+
+impl log::Log for Logger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.target().starts_with("libdoh")
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            eprintln!("{}", record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: Logger = Logger;
 
 fn main() {
+    let _ = log::set_logger(&LOGGER);
+    log::set_max_level(log::LevelFilter::Info);
+
     let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
     runtime_builder.enable_all();
     runtime_builder.thread_name("doh-proxy");
@@ -39,60 +58,12 @@ fn main() {
         }
     };
 
-    let listen_address = match LISTEN_ADDRESS.parse() {
-        Ok(addr) => addr,
-        Err(e) => {
-            eprintln!(
-                "Error: Invalid default listen address '{}': {}",
-                LISTEN_ADDRESS, e
-            );
-            std::process::exit(1);
-        }
-    };
-
-    let server_address = match SERVER_ADDRESS.parse() {
-        Ok(addr) => addr,
-        Err(e) => {
-            eprintln!(
-                "Error: Invalid default server address '{}': {}",
-                SERVER_ADDRESS, e
-            );
-            std::process::exit(1);
-        }
-    };
-
     let mut globals = Globals {
-        #[cfg(feature = "tls")]
-        tls_cert_path: None,
-        #[cfg(feature = "tls")]
-        tls_cert_key_path: None,
-
-        listen_address,
-        local_bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
-        server_address,
-        path: PATH.to_string(),
-        max_clients: MAX_CLIENTS,
-        timeout: Duration::from_secs(TIMEOUT_SEC),
-        max_concurrent_streams: MAX_CONCURRENT_STREAMS,
-        min_ttl: MIN_TTL,
-        max_ttl: MAX_TTL,
-        err_ttl: ERR_TTL,
-        keepalive: true,
-        disable_post: false,
-        allow_odoh_post: false,
-        enable_ecs: false,
-        ecs_prefix_v4: 24,
-        ecs_prefix_v6: 56,
-        odoh_configs_path: ODOH_CONFIGS_PATH.to_string(),
-        odoh_rotator: Arc::new(rotator),
-
-        runtime_handle: runtime.handle().clone(),
+        odoh_rotator: Some(Arc::new(rotator)),
+        ..Globals::default()
     };
-    parse_opts(&mut globals);
-    let doh = DoH {
-        globals: Arc::new(globals),
-        remote_addr: None,
-    };
+    let forwarder = parse_opts(&mut globals);
+    let doh = DoH::new(globals, forwarder);
 
     if let Err(e) = runtime.block_on(doh.entrypoint()) {
         eprintln!("Error: Failed to start DoH server: {}", e);

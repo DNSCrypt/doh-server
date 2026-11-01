@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
+use std::net::ToSocketAddrs;
 #[cfg(feature = "tls")]
 use std::path::PathBuf;
 use std::time::Duration;
@@ -199,7 +199,7 @@ fn options() -> clap::Command {
     options
 }
 
-pub fn parse_opts(globals: &mut Globals) {
+pub fn parse_opts(globals: &mut Globals) -> Forwarder {
     let matches = options().get_matches();
 
     // Parse listen address
@@ -213,7 +213,7 @@ pub fn parse_opts(globals: &mut Globals) {
     let server_address_str = matches
         .get_one::<String>("server_address")
         .expect("server_address has a default value");
-    globals.server_address = server_address_str
+    let server_address = server_address_str
         .to_socket_addrs()
         .unwrap_or_else(|e| {
             exit_with_error(&format!(
@@ -229,34 +229,29 @@ pub fn parse_opts(globals: &mut Globals) {
             ))
         });
 
+    let max_clients = *matches
+        .get_one::<usize>("max_clients")
+        .expect("max_clients has a default value");
+    let mut forwarder = Forwarder::new(server_address, max_clients / UDP_TCP_RATIO);
+
     // Parse local bind address
-    globals.local_bind_address = match matches.get_one::<String>("local_bind_address") {
-        Some(address) => address.parse().unwrap_or_else(|e| {
+    if let Some(address) = matches.get_one::<String>("local_bind_address") {
+        forwarder.local_bind_address = address.parse().unwrap_or_else(|e| {
             exit_with_error(&format!("Invalid local bind address '{}': {}", address, e))
-        }),
-        None => match globals.server_address {
-            SocketAddr::V4(_) => SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)),
-            SocketAddr::V6(s) => SocketAddr::V6(SocketAddrV6::new(
-                Ipv6Addr::UNSPECIFIED,
-                0,
-                s.flowinfo(),
-                s.scope_id(),
-            )),
-        },
-    };
+        });
+    }
 
     // Parse path
-    globals.path = matches
+    let mut path = matches
         .get_one::<String>("path")
         .expect("path has a default value")
         .to_string();
-    if !globals.path.starts_with('/') {
-        globals.path = format!("/{}", globals.path);
+    if !path.starts_with('/') {
+        path = format!("/{}", path);
     }
+    globals.path = Some(path.clone());
 
-    globals.max_clients = *matches
-        .get_one::<usize>("max_clients")
-        .expect("max_clients has a default value");
+    globals.max_clients = max_clients;
 
     globals.timeout = Duration::from_secs(
         *matches
@@ -279,7 +274,7 @@ pub fn parse_opts(globals: &mut Globals) {
     let min_ttl_str = matches
         .get_one::<String>("min_ttl")
         .expect("min_ttl has a default value");
-    globals.min_ttl = min_ttl_str
+    forwarder.min_ttl = min_ttl_str
         .parse()
         .unwrap_or_else(|e| exit_with_error(&format!("Invalid min TTL '{}': {}", min_ttl_str, e)));
 
@@ -287,7 +282,7 @@ pub fn parse_opts(globals: &mut Globals) {
     let max_ttl_str = matches
         .get_one::<String>("max_ttl")
         .expect("max_ttl has a default value");
-    globals.max_ttl = max_ttl_str
+    forwarder.max_ttl = max_ttl_str
         .parse()
         .unwrap_or_else(|e| exit_with_error(&format!("Invalid max TTL '{}': {}", max_ttl_str, e)));
 
@@ -295,19 +290,19 @@ pub fn parse_opts(globals: &mut Globals) {
     let err_ttl_str = matches
         .get_one::<String>("err_ttl")
         .expect("err_ttl has a default value");
-    globals.err_ttl = err_ttl_str.parse().unwrap_or_else(|e| {
+    forwarder.err_ttl = err_ttl_str.parse().unwrap_or_else(|e| {
         exit_with_error(&format!("Invalid error TTL '{}': {}", err_ttl_str, e))
     });
     globals.keepalive = !matches.get_flag("disable_keepalive");
     globals.disable_post = matches.get_flag("disable_post");
     globals.allow_odoh_post = matches.get_flag("allow_odoh_post");
-    globals.enable_ecs = matches.get_flag("enable_ecs");
+    forwarder.enable_ecs = matches.get_flag("enable_ecs");
 
     // Parse ECS prefix lengths
     let ecs_prefix_v4_str = matches
         .get_one::<String>("ecs_prefix_v4")
         .expect("ecs_prefix_v4 has a default value");
-    globals.ecs_prefix_v4 = ecs_prefix_v4_str.parse().unwrap_or_else(|e| {
+    forwarder.ecs_prefix_v4 = ecs_prefix_v4_str.parse().unwrap_or_else(|e| {
         exit_with_error(&format!(
             "Invalid ECS IPv4 prefix '{}': {}",
             ecs_prefix_v4_str, e
@@ -317,7 +312,7 @@ pub fn parse_opts(globals: &mut Globals) {
     let ecs_prefix_v6_str = matches
         .get_one::<String>("ecs_prefix_v6")
         .expect("ecs_prefix_v6 has a default value");
-    globals.ecs_prefix_v6 = ecs_prefix_v6_str.parse().unwrap_or_else(|e| {
+    forwarder.ecs_prefix_v6 = ecs_prefix_v6_str.parse().unwrap_or_else(|e| {
         exit_with_error(&format!(
             "Invalid ECS IPv6 prefix '{}': {}",
             ecs_prefix_v6_str, e
@@ -351,7 +346,7 @@ pub fn parse_opts(globals: &mut Globals) {
             if public_addresses.is_empty() {
                 // No public addresses specified, generate stamps without IP
                 let mut doh_builder =
-                    dnsstamps::DoHBuilder::new(hostname.to_string(), globals.path.to_string());
+                    dnsstamps::DoHBuilder::new(hostname.to_string(), path.to_string());
                 if let Some(port) = public_port {
                     doh_builder = doh_builder.with_port(port);
                 }
@@ -363,10 +358,8 @@ pub fn parse_opts(globals: &mut Globals) {
                     Err(e) => eprintln!("Warning: Failed to generate DoH stamp: {}", e),
                 }
 
-                let mut odoh_builder = dnsstamps::ODoHTargetBuilder::new(
-                    hostname.to_string(),
-                    globals.path.to_string(),
-                );
+                let mut odoh_builder =
+                    dnsstamps::ODoHTargetBuilder::new(hostname.to_string(), path.to_string());
                 if let Some(port) = public_port {
                     odoh_builder = odoh_builder.with_port(port);
                 }
@@ -381,7 +374,7 @@ pub fn parse_opts(globals: &mut Globals) {
                 // Generate stamps for each public address
                 for public_address in &public_addresses {
                     let mut doh_builder =
-                        dnsstamps::DoHBuilder::new(hostname.to_string(), globals.path.to_string())
+                        dnsstamps::DoHBuilder::new(hostname.to_string(), path.to_string())
                             .with_address(public_address.to_string());
                     if let Some(port) = public_port {
                         doh_builder = doh_builder.with_port(port);
@@ -400,10 +393,8 @@ pub fn parse_opts(globals: &mut Globals) {
                 println!(); // Empty line for readability
 
                 // ODoH stamps don't support IP addresses, so we generate just one
-                let mut odoh_builder = dnsstamps::ODoHTargetBuilder::new(
-                    hostname.to_string(),
-                    globals.path.to_string(),
-                );
+                let mut odoh_builder =
+                    dnsstamps::ODoHTargetBuilder::new(hostname.to_string(), path.to_string());
                 if let Some(port) = public_port {
                     odoh_builder = odoh_builder.with_port(port);
                 }
@@ -425,6 +416,8 @@ pub fn parse_opts(globals: &mut Globals) {
         );
         }
     }
+
+    forwarder
 }
 
 #[cfg(test)]

@@ -27,7 +27,7 @@ use crate::accept::Acceptor;
 use crate::admission::Slot;
 use crate::constants::CERTS_WATCH_DELAY_SECS;
 use crate::errors::*;
-use crate::{lifecycle, Server};
+use crate::{lifecycle, Resolver, Server};
 
 pub fn create_tls_acceptor<P, P2>(certs_path: P, certs_keys_path: P2) -> io::Result<TlsAcceptor>
 where
@@ -120,9 +120,9 @@ where
     Ok(TlsAcceptor::from(Arc::new(server_config)))
 }
 
-impl Server {
+impl<R: Resolver> Server<R> {
     /// Connections accepted before the first certificate has been loaded are closed.
-    async fn accept_tls_connections(
+    pub(crate) async fn accept_tls_connections(
         self: Arc<Self>,
         listener: TcpListener,
         tls_acceptor_receiver: watch::Receiver<Option<TlsAcceptor>>,
@@ -130,13 +130,16 @@ impl Server {
         let mut acceptor = Acceptor::default();
         loop {
             let (raw_stream, remote_addr) = acceptor.accept(&listener).await;
+            if !self.doh.resolver.allow_connection(remote_addr) {
+                continue;
+            }
             let Some(tls_acceptor) = tls_acceptor_receiver.borrow().clone() else {
                 continue;
             };
             let Some(slot) = self.admission.try_admit() else {
                 continue;
             };
-            self.spawn(Arc::clone(&self).serve_tls_connection(
+            tokio::spawn(Arc::clone(&self).serve_tls_connection(
                 tls_acceptor,
                 raw_stream,
                 remote_addr,
@@ -199,7 +202,7 @@ impl Server {
                     Ok(tls_acceptor) => {
                         tls_acceptor_sender.send_replace(Some(tls_acceptor));
                     }
-                    Err(e) => eprintln!("TLS certificates error: {e}"),
+                    Err(e) => log::error!("TLS certificates error: {e}"),
                 }
                 tokio::time::sleep(Duration::from_secs(CERTS_WATCH_DELAY_SECS.into())).await;
             }

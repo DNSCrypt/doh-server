@@ -16,9 +16,10 @@ default = ["tls"]
 tls = ["libdoh/tls"]
 
 [dependencies]
-libdoh = { path = "src/libdoh", version = "0.10", default-features = false }
+libdoh = { path = "src/libdoh", version = "0.11", default-features = false }
 clap = { version = "4", features = ["std", "cargo", "wrap_help", "string"] }
 dnsstamps = "0.1"
+log = "0.4"
 mimalloc = { version = "0.1", default-features = false }
 
 [package.metadata.generate-rpm]
