@@ -529,13 +529,15 @@ Unless you are using intermediate certificates, your safest option is probably t
 
 Go back to the online DNS stamp calculator, and copy&paste the hash (in this example: `f61e576877da9650294cccb5f96c75fcb71bda1bbc4646367c4ebeda89d7318f`).
 
-If you are using Let's Encrypt, the last line is likely to be:
+If you are using Let's Encrypt, don't pin the intermediate certificate, which can change every time the certificate is renewed.
+Pin the cross-signed ISRG root certificates that your server sends along with it instead.
+
+Include all three of these hashes in your stamp, even if your certificate only uses one of them.
+In the online DNS stamp calculator, paste them as a single line:
 
 ```text
-Advertised cert: [CN=Let's Encrypt Authority R3,O=Let's Encrypt,C=US] [444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce]
+8c5033973ffe4ff1ef0aa92984fc93281ba7a9278ef8bf641226b898d10d4e74,369d1cf858e309c02aa2824c3763e12c05975e03291bff2bb462567bcbe93f21,32edbb11cc258fbe33c2cd24a149270f0be6f446f57264b3bd1c25b98533272e
 ```
-
-There you have it. Your certificate hash is `444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce`.
 
 This [Go code snippet](https://gist.github.com/d6cb41742a1ceb54d48cc286f3d5c5fa) can also compute the hash of certificates given a `.der` file.
 
@@ -572,12 +574,10 @@ This is where **certificate hashes in stamps** come in.
 
 ### Common certificate hashes
 
-* Let's Encrypt E1:
-  * `cc1060d39c8329b62b6fbc7d0d6df9309869b981e7e6392d5cd8fa408f4d80e6`
-* Let's Encrypt R3:
-  * `444ebd67bb83f8807b3921e938ac9178b882bd50aadb11231f044cf5f08df7ce`
-* Let's Encrypt R10:
-  * `e644ba6963e335fe765cb9976b12b10eb54294b42477764ccb3a3acca3acb2fc`
+* Let's Encrypt (include all three):
+  * ISRG Root X2, cross-signed by ISRG Root X1: `8c5033973ffe4ff1ef0aa92984fc93281ba7a9278ef8bf641226b898d10d4e74`
+  * ISRG Root YE, cross-signed by ISRG Root X2: `369d1cf858e309c02aa2824c3763e12c05975e03291bff2bb462567bcbe93f21`
+  * ISRG Root YR, cross-signed by ISRG Root X1: `32edbb11cc258fbe33c2cd24a149270f0be6f446f57264b3bd1c25b98533272e`
 * ZeroSSL:
   * `9a3a34f727deb9bca51003d9ce9c39f8f27dd9c5242901c2bab1a44e635a0219`
 
